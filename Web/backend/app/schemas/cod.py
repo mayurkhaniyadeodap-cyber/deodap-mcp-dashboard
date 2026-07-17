@@ -1,0 +1,40 @@
+"""COD reconciliation API contract.
+
+Reshaped in Phase 2: the Ship MCP exposes COD *value* per courier
+(order_analytics) and *global* remittance (cod_remittance_summary) — but NOT
+per-courier remitted/pending/TDS. So the detail table is Courier · Orders · COD
+Value, and the per-courier chart is "COD value by courier". Fictional
+remitted/pending/TDS columns were removed rather than faked.
+"""
+
+from typing import Literal
+
+from pydantic import BaseModel
+
+from app.schemas.dashboard import Kpi
+
+
+class CodCourier(BaseModel):
+    """Per-courier COD value (order_analytics group_by=courier)."""
+
+    courier: str
+    orders: int
+    cod_value: float
+
+
+class CodWeekly(BaseModel):
+    """One weekly window. Both are GLOBAL (no per-courier split exists)."""
+
+    week: str
+    collected: float  # COD value booked in the window (order_analytics.cod_value)
+    remitted: float  # COD remitted in the window (cod_remittance_summary.remitted)
+
+
+class CodResponse(BaseModel):
+    kpis: list[Kpi]
+    reconciliation: list[CodCourier]
+    weekly: list[CodWeekly]
+    # --- Additive provenance meta (drives the Live/Sample badge; flips to
+    # "mock" whenever the live fetch fails or the MCP token is blank). ---
+    source: Literal["live", "mock"] = "mock"
+    date_field: str = "order_date"

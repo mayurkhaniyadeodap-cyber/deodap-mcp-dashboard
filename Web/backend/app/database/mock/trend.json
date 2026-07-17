@@ -1,0 +1,80 @@
+{
+  "source": "mock",
+  "date_field": "order_date",
+  "daily": [
+    {
+      "day": "2026-06-15",
+      "orders": 5520,
+      "order_value": 3356630.6
+    },
+    {
+      "day": "2026-06-16",
+      "orders": 4882,
+      "order_value": 3232658.4
+    },
+    {
+      "day": "2026-06-17",
+      "orders": 4733,
+      "order_value": 3034086.27
+    },
+    {
+      "day": "2026-06-18",
+      "orders": 4735,
+      "order_value": 2938847.46
+    },
+    {
+      "day": "2026-06-19",
+      "orders": 4682,
+      "order_value": 3400951.78
+    }
+  ],
+  "couriers": [
+    "BlueDart",
+    "DTDC",
+    "Amazon ATS",
+    "ShipRocket",
+    "Shree Maruti",
+    "Trackon",
+    "Delhivery",
+    "Ekart"
+  ],
+  "by_month": [
+    {
+      "month": "May",
+      "BlueDart": 3571965.18,
+      "DTDC": 2568386.33,
+      "Amazon ATS": 438915.5,
+      "ShipRocket": 124690.54,
+      "Shree Maruti": 298560.06,
+      "Trackon": 101801.0,
+      "Delhivery": 265301.76,
+      "Ekart": 37.76
+    },
+    {
+      "month": "Jun",
+      "BlueDart": 3042384.81,
+      "DTDC": 2562362.71,
+      "Amazon ATS": 389256.52,
+      "ShipRocket": 156947.42,
+      "Shree Maruti": 335715.9,
+      "Trackon": 857655.86,
+      "Delhivery": 155445.26,
+      "Ekart": 956727.29
+    },
+    {
+      "month": "Jul",
+      "BlueDart": 1260659.08,
+      "DTDC": 767707.04,
+      "Amazon ATS": 350486.27,
+      "ShipRocket": 62135.26,
+      "Shree Maruti": 164833.02,
+      "Trackon": 492759.74,
+      "Delhivery": 97597.82,
+      "Ekart": 770206.53
+    }
+  ],
+  "partial_months": [
+    "Jul"
+  ],
+  "window": "2026-05-01 → 2026-07-15 · 3 month(s)"
+}

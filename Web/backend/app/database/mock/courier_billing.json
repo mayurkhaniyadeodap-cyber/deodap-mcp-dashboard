@@ -1,0 +1,97 @@
+{
+  "rows": [
+    {
+      "courier": "BlueDart",
+      "base_freight": 41721.75,
+      "gst": 7675.62,
+      "cod_charges": 926.78,
+      "total": 50324.15,
+      "rto_actual": 35718.48
+    },
+    {
+      "courier": "Ekart",
+      "base_freight": 20523.0,
+      "gst": 3700.26,
+      "cod_charges": 34.0,
+      "total": 24257.26,
+      "rto_actual": 10653.33
+    },
+    {
+      "courier": "DTDC",
+      "base_freight": 12401.0,
+      "gst": 2232.18,
+      "cod_charges": 0.0,
+      "total": 14633.18,
+      "rto_actual": 31334.11
+    },
+    {
+      "courier": "Trackon",
+      "base_freight": 11708.0,
+      "gst": 2107.44,
+      "cod_charges": 0.0,
+      "total": 13815.44,
+      "rto_actual": 19757.92
+    },
+    {
+      "courier": "Shree Maruti",
+      "base_freight": 4478.0,
+      "gst": 806.04,
+      "cod_charges": 0.0,
+      "total": 5284.04,
+      "rto_actual": 5451.6
+    },
+    {
+      "courier": "Amazon ATS",
+      "base_freight": 3554.0,
+      "gst": 711.72,
+      "cod_charges": 400.0,
+      "total": 4665.72,
+      "rto_actual": 32598.64
+    },
+    {
+      "courier": "Delhivery",
+      "base_freight": 2524.0,
+      "gst": 454.32,
+      "cod_charges": 0.0,
+      "total": 2978.32,
+      "rto_actual": 304.44
+    },
+    {
+      "courier": "ShipRocket",
+      "base_freight": 1146.0,
+      "gst": 228.96,
+      "cod_charges": 126.0,
+      "total": 1500.96,
+      "rto_actual": 14879.8
+    },
+    {
+      "courier": "Rapid Miles",
+      "base_freight": 420.0,
+      "gst": 75.6,
+      "cod_charges": 0.0,
+      "total": 495.6,
+      "rto_actual": 0.0
+    },
+    {
+      "courier": "India Post",
+      "base_freight": 230.0,
+      "gst": 0.0,
+      "cod_charges": 0.0,
+      "total": 230.0,
+      "rto_actual": 0.0
+    },
+    {
+      "courier": "Shree Anjani",
+      "base_freight": 224.0,
+      "gst": 0.0,
+      "cod_charges": 0.0,
+      "total": 224.0,
+      "rto_actual": 0.0
+    }
+  ],
+  "sample_size": 2485,
+  "total_matched": 159267,
+  "is_full": false,
+  "source": "mock",
+  "date_field": "order_date"
+}

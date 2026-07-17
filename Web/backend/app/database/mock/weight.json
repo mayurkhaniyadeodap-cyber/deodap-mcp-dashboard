@@ -1,0 +1,244 @@
+{
+  "source": "mock",
+  "recon_date_field": "reconciliation_at",
+  "sample_date_field": "order_date",
+  "sample_size": 40,
+  "total_matched": 158764,
+  "sampled_rows": 2500,
+  "missing_weight_count": 561,
+  "missing_weight_pct": 22.4,
+  "summary": {
+    "reconciliation_lines": 317689,
+    "weight_overcharged": 88286,
+    "weight_diff_kg": 38284.8,
+    "fwd_rate_diff": 3339327.39,
+    "reconciled": 92377,
+    "disputed": 225312,
+    "has_recon": true
+  },
+  "histogram": [
+    {
+      "bucket": "0–0.5",
+      "count": 288
+    },
+    {
+      "bucket": "0.5–1",
+      "count": 43
+    },
+    {
+      "bucket": "1–2",
+      "count": 24
+    },
+    {
+      "bucket": "2–5",
+      "count": 13
+    },
+    {
+      "bucket": "5+",
+      "count": 13
+    }
+  ],
+  "scatter": [
+    {
+      "actual": 0.023,
+      "charged": 0.023,
+      "courier": "Trackon"
+    },
+    {
+      "actual": 0.519,
+      "charged": 0.5,
+      "courier": "Amazon ATS"
+    },
+    {
+      "actual": 1.106,
+      "charged": 1.0,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 2.892,
+      "charged": 2.0,
+      "courier": "Amazon ATS"
+    },
+    {
+      "actual": 7.69,
+      "charged": 7.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 1.372,
+      "charged": 1.0,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 0.701,
+      "charged": 0.5,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 0.898,
+      "charged": 0.5,
+      "courier": "Amazon ATS"
+    },
+    {
+      "actual": 1.384,
+      "charged": 1.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 0.479,
+      "charged": 0.25,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 0.093,
+      "charged": 0.093,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 0.221,
+      "charged": 0.221,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 0.351,
+      "charged": 0.25,
+      "courier": "Trackon"
+    },
+    {
+      "actual": 1.076,
+      "charged": 1.0,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 1.493,
+      "charged": 1.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 2.621,
+      "charged": 2.0,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 1.066,
+      "charged": 1.0,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 1.116,
+      "charged": 1.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 3.279,
+      "charged": 3.0,
+      "courier": "Trackon"
+    },
+    {
+      "actual": 4.539,
+      "charged": 4.0,
+      "courier": "Trackon"
+    },
+    {
+      "actual": 0.365,
+      "charged": 0.25,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 1.273,
+      "charged": 1.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 0.876,
+      "charged": 0.5,
+      "courier": "Trackon"
+    },
+    {
+      "actual": 1.576,
+      "charged": 1.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 3.834,
+      "charged": 3.0,
+      "courier": "Delhivery"
+    },
+    {
+      "actual": 0.075,
+      "charged": 0.075,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 0.18,
+      "charged": 0.18,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 0.387,
+      "charged": 0.25,
+      "courier": "DTDC"
+    },
+    {
+      "actual": 0.086,
+      "charged": 0.086,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 0.576,
+      "charged": 0.5,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 9.056,
+      "charged": 9.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 0.237,
+      "charged": 0.237,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 0.392,
+      "charged": 0.25,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 1.505,
+      "charged": 1.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 0.692,
+      "charged": 0.5,
+      "courier": "BlueDart"
+    },
+    {
+      "actual": 3.181,
+      "charged": 3.0,
+      "courier": "Trackon"
+    },
+    {
+      "actual": 0.15,
+      "charged": 0.15,
+      "courier": "Amazon ATS"
+    },
+    {
+      "actual": 0.017,
+      "charged": 0.017,
+      "courier": "Shree Maruti"
+    },
+    {
+      "actual": 15.368,
+      "charged": 14.0,
+      "courier": "Ekart"
+    },
+    {
+      "actual": 0.747,
+      "charged": 0.5,
+      "courier": "Shree Maruti"
+    }
+  ],
+  "is_full": false
+}

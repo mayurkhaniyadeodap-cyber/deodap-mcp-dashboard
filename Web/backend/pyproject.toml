@@ -1,0 +1,45 @@
+[project]
+name = "deodap-mcp-dashboard-backend"
+version = "0.1.0"
+description = "DeoDap MCP Dashboard — FastAPI backend (Phase 1: mock data + structure only)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic[email]>=2.7",
+    "pydantic-settings>=2.3",
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7.4",
+    # passlib 1.7.4 is incompatible with bcrypt >= 4.1 (backend-probe ValueError),
+    # so pin bcrypt to the 4.0.x line until passlib ships a fix.
+    "bcrypt>=4.0,<4.1",
+    "python-multipart>=0.0.9",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5",
+    "black>=24.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

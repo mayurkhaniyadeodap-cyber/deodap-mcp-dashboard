@@ -1,0 +1,20 @@
+# Keep the build context small and never ship secrets or local state.
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+Web/frontend/dist
+Web/frontend/.vite
+venv/
+.venv/
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+**/*.sqlite3
+.git
+.gitignore
+*.md
+MCP_DATA_MAPPING.md

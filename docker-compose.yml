@@ -1,0 +1,31 @@
+# DeoDap MCP Dashboard — internal single-container deploy.
+# Secrets come from an env_file (never baked into the image). HTTPS is terminated
+# at the reverse proxy / VPN gateway in front of this; the app speaks plain HTTP
+# on the internal network only.
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: deodap-mcp-dashboard:latest
+    # Bind to loopback only — this tool must NOT be publicly reachable. Put it
+    # behind the VPN / internal proxy, which forwards to 127.0.0.1:8000.
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - ./Web/backend/.env.production   # copy from Web/backend/.env.example, fill in
+    environment:
+      ENVIRONMENT: production            # enables the fail-fast boot guards
+    volumes:
+      - dashboard-data:/data             # SQLite persistence (DATABASE_URL=sqlite:////data/deodap.db)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  dashboard-data:

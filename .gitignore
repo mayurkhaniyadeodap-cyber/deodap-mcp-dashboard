@@ -1,0 +1,83 @@
+# ============================================================================
+#  DeoDap MCP Dashboard — root .gitignore  (Python/FastAPI + Node/Vite + Docker)
+# ============================================================================
+
+# ---- Secrets & credentials (NEVER commit) ----------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.pgpass
+secrets.*
+credentials.*
+
+# ---- Databases & runtime data ----------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+data/
+
+# ---- Python ----------------------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+develop-eggs/
+.installed.cfg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.ipynb_checkpoints/
+
+# ---- Node / Vite frontend --------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- Editors & OS ----------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs & temp -----------------------------------------------------------
+*.log
+logs/
+tmp/
+*.tmp
+*.bak
+
+# ---- Docker ----------------------------------------------------------------
+# (compose override files often carry local secrets)
+docker-compose.override.yml

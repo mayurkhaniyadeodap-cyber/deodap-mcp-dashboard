@@ -1,0 +1,84 @@
+DeoDap MCP Dashboard — Project Guide
+A courier-billing dashboard for DeoDap. React + Vite frontend, FastAPI backend, with live data pulled from the Ship MCP server (and a mock fallback wherever no live source exists).
+
+1. The one architectural rule
+The frontend never imports data directly. Every page gets data through:
+
+
+React page → TanStack Query hook (src/services/*) → Axios → /api/... → FastAPI router → service layer → Ship MCP (live)  ─or─  mock JSON (fallback)
+TypeScript types are generated from FastAPI's OpenAPI schema. If you change a backend response shape, you regenerate types — you never hand-write them.
+
+2. Layout
+
+MCP Courier Management System/
+├─ venv/                     ← Python virtualenv (repo root)
+├─ README.md
+└─ Web/
+   ├─ backend/               ← FastAPI (Python 3.12)
+   │  ├─ .env                ← MCP_URL, MCP_TOKEN, JWT_SECRET, MCP_DEBUG
+   │  └─ app/
+   │     ├─ main.py          app + middleware + router registration
+   │     ├─ core/config.py   the ONLY place env is read (pydantic-settings)
+   │     ├─ api/routers/     auth, dashboard, bills, analytics, export, users, profile, meta, mcp_debug
+   │     ├─ api/deps.py      auth guard (require_role), date-range dependency
+   │     ├─ services/        ⭐ the ONLY data source — live MCP + mock fallback
+   │     ├─ schemas/         Pydantic response contracts
+   │     └─ database/mock/   the sample JSON files
+   └─ frontend/              ← Vite + React + TS
+      └─ src/
+         ├─ pages/           one file per route (Dashboard, Bills, COD, …)
+         ├─ services/        TanStack Query hooks (the data boundary)
+         ├─ components/      shared/ (cards, tables, badges) + ui/ (primitives) + layout/
+         ├─ config/          chart theme, nav, tokens, app constants
+         ├─ store/           Zustand (auth, date-range)
+         └─ types/           api.gen.ts (generated) + api.ts (friendly aliases)
+3. Running it (Windows / PowerShell)
+Backend (port 8000):
+
+
+cd "Web\backend"
+..\..\venv\Scripts\python.exe -m uvicorn app.main:app --reload
+Health check: http://localhost:8000/api/health · API docs: http://localhost:8000/docs
+
+Frontend (port 5173, proxies /api → 8000):
+
+
+cd "Web\frontend"
+corepack pnpm install     # first time only
+corepack pnpm dev
+Open http://localhost:5173 and log in with admin@deodap.in / Admin@123.
+
+Use corepack pnpm, not bare pnpm — this project pins pnpm via Corepack.
+
+Regenerate API types (backend must be running):
+
+
+cd "Web\frontend"
+corepack pnpm gen:types
+4. Key concepts
+Live vs. mock data. Each service (bills_service, cod_service, …) tries the Ship MCP server first and transparently falls back to mock JSON on any error or blank MCP_TOKEN. The shared helper is services/live_support.py (live_or_mock(...), 60s cache). The app never breaks — it degrades to sample data.
+
+Live/Sample badges. GET /api/_meta/sources returns a static map of which panels are live vs. sample. The frontend fetches it (useSourceMeta()) and renders a 🟢 Live / ⚪ Sample badge on each card. Panel provenance is defined only in Web/backend/app/api/routers/meta.py — never hardcoded in components.
+
+Roles (two levels). admin and employee. Admin manages users; employees have full read/normal access to the whole dashboard but can't manage users. Enforced by require_role(...) in api/deps.py (backend) and useHasRole() / RoleGuard (frontend). Seed admin: admin@deodap.in.
+
+Date range. The navbar picker writes to store/dateRange.store.ts (useDateRange() → {from, to}); every data hook passes from/to as query params, and the backend date_range_params dependency forwards them to the MCP tools.
+
+Debug endpoints. /api/_mcp/tools and /api/_mcp/probe are off by default — set MCP_DEBUG=true in Web/backend/.env to mount them.
+
+5. Common tasks
+I want to…	Do this
+Change what a page shows	Edit its src/pages/*.tsx
+Change how data is fetched/shaped	Edit the matching src/services/*.ts hook (frontend) or app/services/*.py (backend)
+Add/adjust a live MCP integration	Edit the backend service; reuse live_support.live_or_mock + mcp_client.call_tool
+Mark a panel live/sample	Edit app/api/routers/meta.py
+Change a response shape	Edit the Pydantic schema → restart backend → corepack pnpm gen:types
+Inspect available MCP tools	Set MCP_DEBUG=true, hit /api/_mcp/tools
+Verify a change	Backend: python -m pytest or a TestClient script; Frontend: corepack pnpm build (runs tsc --noEmit + vite build)
+6. Gotchas
+corepack pnpm, not pnpm — bare pnpm may use the wrong version.
+Port 8000 "zombie socket" — occasionally a dead process keeps 8000 in LISTENING. If the backend won't bind or the browser gets stale data, run on an alternate port and point the Vite proxy at it, or reboot.
+Stale login error banner — the login error stays visible until the next submit; if you mistype once, just click Sign in again with correct creds.
+Never hand-edit src/types/api.gen.ts — regenerate it. (Import from src/types/api.ts aliases.)
+MCP tools are slow/large — e.g. weight_reconciliation_summary ~24s, list_orders is huge (~160k rows/30d); the 60s cache and mock fallback absorb this. Reconciliation tools return aggregates only — per-AWB discrepancy detail stays on sample data (would need a Phase 3 Rate Card & Discrepancy Engine).
+Want me to go deeper on any area — e.g. the MCP integration internals, the auth/roles flow, adding a brand-new page end-to-end, or a test/CI setup?

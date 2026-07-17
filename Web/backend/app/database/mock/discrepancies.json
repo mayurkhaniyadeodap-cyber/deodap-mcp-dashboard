@@ -1,0 +1,152 @@
+{
+  "source": "mock",
+  "recon_date_field": "reconciliation_at",
+  "order_date_field": "order_date",
+  "rate_diff": {
+    "reconciliation_lines": 317689,
+    "weight_overcharged": 88286,
+    "weight_diff_kg": 38284.8,
+    "fwd_rate_diff": 3339327.39,
+    "reconciled": 92377,
+    "disputed": 225312,
+    "has_recon": true
+  },
+  "rto": [
+    {
+      "courier": "ShipRocket",
+      "rate_pct": 22.33,
+      "count": 467,
+      "orders": 2091
+    },
+    {
+      "courier": "Amazon ATS",
+      "rate_pct": 13.12,
+      "count": 1169,
+      "orders": 8908
+    },
+    {
+      "courier": "BlueDart",
+      "rate_pct": 2.7,
+      "count": 1516,
+      "orders": 56183
+    },
+    {
+      "courier": "DTDC",
+      "rate_pct": 2.47,
+      "count": 999,
+      "orders": 40378
+    },
+    {
+      "courier": "Trackon",
+      "rate_pct": 2.06,
+      "count": 357,
+      "orders": 17368
+    },
+    {
+      "courier": "Shree Maruti",
+      "rate_pct": 1.78,
+      "count": 222,
+      "orders": 12501
+    },
+    {
+      "courier": "Ekart",
+      "rate_pct": 0.92,
+      "count": 162,
+      "orders": 17530
+    },
+    {
+      "courier": "Delhivery",
+      "rate_pct": 0.83,
+      "count": 19,
+      "orders": 2291
+    },
+    {
+      "courier": "Shree Anjani",
+      "rate_pct": 0.0,
+      "count": 0,
+      "orders": 794
+    },
+    {
+      "courier": "Rapid Miles",
+      "rate_pct": 0.0,
+      "count": 0,
+      "orders": 521
+    },
+    {
+      "courier": "India Post",
+      "rate_pct": 0.0,
+      "count": 0,
+      "orders": 192
+    }
+  ],
+  "ndr": [
+    {
+      "courier": "ShipRocket",
+      "rate_pct": 29.84,
+      "count": 624,
+      "orders": 2091
+    },
+    {
+      "courier": "Amazon ATS",
+      "rate_pct": 23.59,
+      "count": 2101,
+      "orders": 8908
+    },
+    {
+      "courier": "Trackon",
+      "rate_pct": 19.32,
+      "count": 3356,
+      "orders": 17368
+    },
+    {
+      "courier": "BlueDart",
+      "rate_pct": 14.87,
+      "count": 8352,
+      "orders": 56183
+    },
+    {
+      "courier": "DTDC",
+      "rate_pct": 10.55,
+      "count": 4259,
+      "orders": 40378
+    },
+    {
+      "courier": "Delhivery",
+      "rate_pct": 6.29,
+      "count": 144,
+      "orders": 2291
+    },
+    {
+      "courier": "Shree Maruti",
+      "rate_pct": 5.34,
+      "count": 667,
+      "orders": 12501
+    },
+    {
+      "courier": "Ekart",
+      "rate_pct": 1.72,
+      "count": 301,
+      "orders": 17530
+    },
+    {
+      "courier": "Shree Anjani",
+      "rate_pct": 0.0,
+      "count": 0,
+      "orders": 794
+    },
+    {
+      "courier": "Rapid Miles",
+      "rate_pct": 0.0,
+      "count": 0,
+      "orders": 521
+    },
+    {
+      "courier": "India Post",
+      "rate_pct": 0.0,
+      "count": 0,
+      "orders": 192
+    }
+  ],
+  "ndr_orders": 19804,
+  "ndr_avg_attempts": 3.49
+}

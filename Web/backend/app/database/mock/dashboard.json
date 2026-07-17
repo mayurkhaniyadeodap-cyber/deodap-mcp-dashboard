@@ -1,0 +1,137 @@
+{
+  "source": "mock",
+  "date_field": "order_date",
+  "kpis": [
+    {
+      "key": "total_shipments",
+      "label": "Total Shipments",
+      "value": 158421.0,
+      "format": "number",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": null
+    },
+    {
+      "key": "total_billing",
+      "label": "Applied Shipping Cost",
+      "value": 8264996.55,
+      "format": "currency",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": null
+    },
+    {
+      "key": "average_cost",
+      "label": "Avg Cost / Shipment",
+      "value": 52.17,
+      "format": "currency",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": null
+    },
+    {
+      "key": "total_cod",
+      "label": "COD Value",
+      "value": 6702623.44,
+      "format": "currency",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": null
+    },
+    {
+      "key": "pending_recon",
+      "label": "Pending Reconciliation",
+      "value": 9887.0,
+      "format": "number",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": "COD remittance records not yet settled"
+    },
+    {
+      "key": "on_time",
+      "label": "On-time %",
+      "value": 77.2,
+      "format": "percent",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": "of delivered · 65,950 on-time / 19,484 late · avg delay 3.8d · global"
+    },
+    {
+      "key": "overdue",
+      "label": "Overdue in Transit",
+      "value": 7632.0,
+      "format": "number",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": "past promised EDD, still undelivered"
+    }
+  ],
+  "distribution": [
+    {
+      "name": "BlueDart",
+      "value": 56006
+    },
+    {
+      "name": "DTDC",
+      "value": 40339
+    },
+    {
+      "name": "Ekart",
+      "value": 17485
+    },
+    {
+      "name": "Trackon",
+      "value": 17334
+    },
+    {
+      "name": "Shree Maruti",
+      "value": 12469
+    },
+    {
+      "name": "Amazon ATS",
+      "value": 8899
+    },
+    {
+      "name": "Delhivery",
+      "value": 2278
+    },
+    {
+      "name": "ShipRocket",
+      "value": 2086
+    }
+  ],
+  "state_cost": [
+    {
+      "state": "Maharashtra",
+      "total_cost": 1128535.46
+    },
+    {
+      "state": "Karnataka",
+      "total_cost": 764386.6
+    },
+    {
+      "state": "Gujarat",
+      "total_cost": 759855.11
+    },
+    {
+      "state": "Tamil Nadu",
+      "total_cost": 704289.75
+    },
+    {
+      "state": "Uttar Pradesh",
+      "total_cost": 647448.87
+    },
+    {
+      "state": "Kerala",
+      "total_cost": 592192.53
+    },
+    {
+      "state": "Telangana",
+      "total_cost": 467423.43
+    },
+    {
+      "state": "West Bengal",
+      "total_cost": 373608.99
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  DeoDap MCP Dashboard — design tokens (dark enterprise SaaS).
+  Values map the brand spec to shadcn's HSL variable convention:
+    bg #0b0f19 · surface #1a2236 · border #273548
+    text #f1f5f9 / #94a3b8
+    blue #3b82f6 · green #10b981 · red #ef4444 · amber #f59e0b · purple #8b5cf6
+  Phase 1 ships dark only; :root and .dark carry the same values so shadcn
+  components render correctly regardless of the class on <html>.
+*/
+:root,
+.dark {
+  --background: 223 39% 7%; /* #0b0f19 */
+  --foreground: 210 40% 96%; /* #f1f5f9 */
+
+  --card: 223 35% 16%; /* #1a2236 */
+  --card-to: 223 34% 13%; /* #151d2e — gradient bottom */
+  --card-foreground: 210 40% 96%;
+
+  --popover: 223 35% 16%;
+  --popover-foreground: 210 40% 96%;
+
+  --primary: 217 91% 60%; /* #3b82f6 */
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 223 30% 22%;
+  --secondary-foreground: 210 40% 96%;
+
+  --muted: 223 30% 22%;
+  --muted-foreground: 215 20% 65%; /* #94a3b8 */
+
+  --accent: 223 30% 24%;
+  --accent-foreground: 210 40% 96%;
+
+  --destructive: 0 84% 60%; /* #ef4444 */
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217 30% 22%; /* #273548 */
+  --input: 217 30% 22%;
+  --ring: 217 91% 60%; /* #3b82f6 */
+
+  /* DeoDap semantic accents */
+  --success: 160 84% 39%; /* #10b981 */
+  --warning: 38 92% 50%; /* #f59e0b */
+  --info: 217 91% 60%; /* #3b82f6 */
+  --purple: 258 90% 66%; /* #8b5cf6 */
+  --cyan: 189 94% 43%; /* #06b6d4 */
+  --pink: 330 81% 60%; /* #ec4899 */
+
+  --radius: 0.875rem; /* 14px */
+}
+
+/*
+  Light theme overrides (dark stays the default). The theme store toggles the
+  `.light` class on <html>; accents are unchanged, only surfaces/text flip.
+*/
+.light {
+  --background: 210 40% 98%; /* #f8fafc */
+  --foreground: 222 47% 11%; /* #0f172a */
+
+  --card: 0 0% 100%;
+  --card-to: 210 40% 98%;
+  --card-foreground: 222 47% 11%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 210 40% 94%;
+  --secondary-foreground: 222 47% 15%;
+
+  --muted: 210 40% 94%;
+  --muted-foreground: 215 16% 42%;
+
+  --accent: 210 40% 92%;
+  --accent-foreground: 222 47% 15%;
+
+  --border: 214 32% 88%; /* #e2e8f0 */
+  --input: 214 32% 88%;
+
+  color-scheme: light;
+}
+
+* {
+  @apply border-border;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Subtle, consistent focus ring across interactive elements */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+}

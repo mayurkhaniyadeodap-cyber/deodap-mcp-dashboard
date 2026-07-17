@@ -1,0 +1,136 @@
+"""Savings-opportunity service — SLOW, own 30-min cache, separate endpoint.
+
+For a capped sample of AWBs, price every serviceable courier at the order's
+pincode + weight + payment_type (pincode_serviceability, restricted to the
+order's warehouse → fewer methods + more correct), take the cheapest fwd_billed
+(grossed +18% GST to compare with the all-in applied_courier_rate), and report
+the per-AWB saving vs the courier actually used. Cheapest ≠ better overall, so we
+attach the cheapest courier's RTO%. pincode_serviceability is ~9s p95, so this is
+sampled (25), concurrency-limited (6), and cached 30 min. Failed prices are skipped.
+"""
+
+import asyncio
+import logging
+import time
+
+from app.schemas.savings import SavingRow, SavingsResponse
+from app.services import live_support, mcp_client
+from app.services.courier_service import _name_and_code
+
+logger = logging.getLogger("live")
+
+_SAMPLE = 25
+_CONCURRENCY = 6
+_GST = 1.18
+_TTL_SECONDS = 1800  # 30 min
+_cache: dict[tuple, tuple[float, SavingsResponse]] = {}
+
+_NOTE = "Theoretical maximum — ignores SLA, capacity and routing rules."
+
+
+def _mock() -> SavingsResponse:
+    return SavingsResponse(rows=[], sampled=0, skipped=0, total_saving=0.0, source="mock", note=_NOTE)
+
+
+async def _rto_by_slug(args: dict) -> dict[str, float]:
+    """Cheapest courier's RTO% column source (rto_analysis ÷ order_analytics orders)."""
+    rto_r, oa_r = await asyncio.gather(
+        mcp_client.call_tool("rto_analysis", args),
+        mcp_client.call_tool("order_analytics", {**args, "group_by": "courier"}),
+    )
+    rto = live_support.parse_tool_json(rto_r)
+    oa = live_support.parse_tool_json(oa_r)
+    orders = {str(g.get("group")): int(g.get("orders", 0) or 0) for g in oa.get("breakdown", []) or []}
+    counts = {str(c.get("value")): int(c.get("count", 0) or 0) for c in rto.get("by_courier", []) or []}
+    return {slug: round(counts.get(slug, 0) / o * 100, 2) if o else 0.0 for slug, o in orders.items()}
+
+
+async def _fetch_live(date_from: str | None, date_to: str | None) -> SavingsResponse:
+    args = live_support.date_args(date_from, date_to)
+    rto_pct = await _rto_by_slug(args)
+
+    # Stride-sample AWBs across the whole population (list_orders is newest-first,
+    # so a single page is all one courier/region — biased). 5 spread pages → a
+    # diverse pool of couriers + destinations.
+    first = live_support.parse_tool_json(
+        await mcp_client.call_tool("list_orders", {**args, "limit": 40, "offset": 0})
+    )
+    total = int(first.get("total_matched", 0) or 0)
+    offsets = sorted({min(max(total - 1, 0), int(total * f)) for f in (0.2, 0.4, 0.6, 0.8)})
+    pages = await asyncio.gather(
+        *[mcp_client.call_tool("list_orders", {**args, "limit": 40, "offset": off}) for off in offsets],
+        return_exceptions=True,
+    )
+    all_orders = list(first.get("orders", []) or [])
+    for p in pages:
+        if not isinstance(p, Exception):
+            all_orders += live_support.parse_tool_json(p).get("orders", []) or []
+    eligible = [
+        o for o in all_orders
+        if o.get("awb") and o.get("pincode") and o.get("warehouse_id") and (o.get("applied_courier_rate") or 0) > 0
+    ]
+    step = max(1, len(eligible) // _SAMPLE)
+    pool = eligible[::step][:_SAMPLE]
+
+    sem = asyncio.Semaphore(_CONCURRENCY)
+
+    async def price(o: dict) -> SavingRow | None:
+        async with sem:
+            try:
+                d = live_support.parse_tool_json(await mcp_client.call_tool("pincode_serviceability", {
+                    "pincode": str(o["pincode"]),
+                    "weight_kg": float(o.get("total_weight_kg") or 0.5),
+                    "payment_type": o.get("payment_type") or "Prepaid",
+                    "warehouse_id": int(o["warehouse_id"]),
+                }))
+            except Exception:  # noqa: BLE001 — skip AWBs whose pricing fails
+                return None
+            priced = [
+                m for m in d.get("methods", []) or []
+                if m.get("rate_status") == "success" and (m.get("fwd_billed") or 0) > 0
+            ]
+            if not priced:
+                return None
+            cheapest = min(priced, key=lambda m: float(m["fwd_billed"]))
+            cheapest_slug = str(cheapest.get("courier_slug", ""))
+            applied = round(float(o["applied_courier_rate"]), 2)
+            cheapest_rate = round(float(cheapest["fwd_billed"]) * _GST, 2)
+            return SavingRow(
+                awb=str(o["awb"]),
+                courier_used=_name_and_code(str(o.get("courier_slug", "")))[0],
+                applied=applied,
+                cheapest_courier=_name_and_code(cheapest_slug)[0],
+                cheapest_rate=cheapest_rate,
+                saving=round(applied - cheapest_rate, 2),
+                cheapest_rto_pct=rto_pct.get(cheapest_slug, 0.0),
+            )
+
+    results = await asyncio.gather(*[price(o) for o in pool])
+    rows = [r for r in results if r is not None]
+    rows.sort(key=lambda r: r.saving, reverse=True)
+    skipped = len(pool) - len(rows)
+    total_saving = round(sum(r.saving for r in rows if r.saving > 0), 2)
+    logger.info("savings: sampled=%d skipped=%d total_saving=%.2f", len(rows), skipped, total_saving)
+    return SavingsResponse(
+        rows=rows, sampled=len(rows), skipped=skipped, total_saving=total_saving, source="live", note=_NOTE
+    )
+
+
+async def get_savings_opportunity(
+    date_from: str | None = None, date_to: str | None = None
+) -> SavingsResponse:
+    key = (date_from, date_to)
+    now = time.monotonic()
+    cached = _cache.get(key)
+    if cached is not None and (now - cached[0]) < _TTL_SECONDS:
+        return cached[1]
+    if not live_support.settings.mcp_connect_url:
+        logger.warning("savings: Ship MCP not configured — returning empty sample.")
+        return _mock()
+    try:
+        result = await _fetch_live(date_from, date_to)
+        _cache[key] = (now, result)
+        return result
+    except Exception as exc:  # noqa: BLE001 — never break the page
+        logger.warning("savings: Ship MCP unavailable (%s) — returning empty sample.", exc)
+        return _mock()

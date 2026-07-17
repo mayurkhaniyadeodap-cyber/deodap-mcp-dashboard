@@ -1,0 +1,19 @@
+{
+  "source": "mock",
+  "date_field": "order_date",
+  "unjoined": [],
+  "unmapped": ["110015", "281502", "AMARAVATI", "AMRAVATI", "BARNALA", "641004"],
+  "unmapped_count": 145,
+  "states": [
+    { "state": "Maharashtra", "orders": 21127, "total_cost": 1128535.46, "avg_cost": 53.42, "fwd_cost": 1111641.65, "rto_cost": 16893.81, "delivery_rate_pct": 69.44, "rto_rate_pct": 2.74, "ndr_rate_pct": 16.12, "avg_delivery_days": 6.2, "joined": true },
+    { "state": "Karnataka", "orders": 13709, "total_cost": 764386.6, "avg_cost": 55.76, "fwd_cost": 753826.77, "rto_cost": 10559.83, "delivery_rate_pct": 68.36, "rto_rate_pct": 2.16, "ndr_rate_pct": 10.5, "avg_delivery_days": 6.89, "joined": true },
+    { "state": "Gujarat", "orders": 21719, "total_cost": 759855.11, "avg_cost": 34.99, "fwd_cost": 744522.93, "rto_cost": 15332.18, "delivery_rate_pct": 77.11, "rto_rate_pct": 2.48, "ndr_rate_pct": 9.25, "avg_delivery_days": 4.11, "joined": true },
+    { "state": "Tamil Nadu", "orders": 12154, "total_cost": 704289.75, "avg_cost": 57.95, "fwd_cost": 697962.42, "rto_cost": 6327.33, "delivery_rate_pct": 66.89, "rto_rate_pct": 1.77, "ndr_rate_pct": 10.29, "avg_delivery_days": 7.59, "joined": true },
+    { "state": "Uttar Pradesh", "orders": 11918, "total_cost": 647448.87, "avg_cost": 54.33, "fwd_cost": 630854.39, "rto_cost": 16594.48, "delivery_rate_pct": 65.69, "rto_rate_pct": 4.65, "ndr_rate_pct": 14.69, "avg_delivery_days": 6.82, "joined": true },
+    { "state": "Kerala", "orders": 11976, "total_cost": 592192.53, "avg_cost": 49.45, "fwd_cost": 585946.81, "rto_cost": 6245.72, "delivery_rate_pct": 71.27, "rto_rate_pct": 1.48, "ndr_rate_pct": 11.96, "avg_delivery_days": 8.24, "joined": true },
+    { "state": "Telangana", "orders": 8515, "total_cost": 467423.43, "avg_cost": 54.89, "fwd_cost": 461199.96, "rto_cost": 6223.47, "delivery_rate_pct": 68.14, "rto_rate_pct": 2.44, "ndr_rate_pct": 11.34, "avg_delivery_days": 6.89, "joined": true },
+    { "state": "West Bengal", "orders": 6714, "total_cost": 373608.99, "avg_cost": 55.65, "fwd_cost": 367847.26, "rto_cost": 5761.73, "delivery_rate_pct": 66.53, "rto_rate_pct": 2.47, "ndr_rate_pct": 8.43, "avg_delivery_days": 7.81, "joined": true },
+    { "state": "Rajasthan", "orders": 6038, "total_cost": 353441.7, "avg_cost": 58.54, "fwd_cost": 339245.62, "rto_cost": 14196.08, "delivery_rate_pct": 63.38, "rto_rate_pct": 7.45, "ndr_rate_pct": 17.74, "avg_delivery_days": 6.6, "joined": true },
+    { "state": "Delhi", "orders": 6369, "total_cost": 348016.84, "avg_cost": 54.64, "fwd_cost": 343407.4, "rto_cost": 4609.44, "delivery_rate_pct": 70.48, "rto_rate_pct": 2.21, "ndr_rate_pct": 9.53, "avg_delivery_days": 5.4, "joined": true }
+  ]
+}

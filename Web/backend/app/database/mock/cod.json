@@ -1,0 +1,30 @@
+{
+  "source": "mock",
+  "date_field": "order_date",
+  "kpis": [
+    { "key": "cod_value", "label": "COD Value", "value": 6702623.44, "format": "currency", "delta": 0.0, "delta_tone": "neutral" },
+    { "key": "remitted", "label": "COD Remitted", "value": 1092684.31, "format": "currency", "delta": 0.0, "delta_tone": "neutral" },
+    { "key": "cod_records", "label": "COD Records", "value": 11909, "format": "number", "delta": 0.0, "delta_tone": "neutral" },
+    { "key": "pending", "label": "Pending Records", "value": 9887, "format": "number", "delta": 0.0, "delta_tone": "neutral" }
+  ],
+  "reconciliation": [
+    { "courier": "DTDC", "orders": 40339, "cod_value": 2071940.83 },
+    { "courier": "BlueDart", "orders": 56006, "cod_value": 1988954.21 },
+    { "courier": "Amazon ATS", "orders": 8899, "cod_value": 1900503.41 },
+    { "courier": "ShipRocket", "orders": 2086, "cod_value": 608466.17 },
+    { "courier": "Ekart", "orders": 17485, "cod_value": 119267.82 },
+    { "courier": "Delhivery", "orders": 2278, "cod_value": 5993.0 },
+    { "courier": "Unassigned", "orders": 18, "cod_value": 5561.0 },
+    { "courier": "Rapid Miles", "orders": 523, "cod_value": 1937.0 },
+    { "courier": "Trackon", "orders": 17334, "cod_value": 0.0 },
+    { "courier": "Shree Maruti", "orders": 12469, "cod_value": 0.0 },
+    { "courier": "Shree Anjani", "orders": 793, "cod_value": 0.0 },
+    { "courier": "India Post", "orders": 191, "cod_value": 0.0 }
+  ],
+  "weekly": [
+    { "week": "Week 1", "collected": 1698420.5, "remitted": 402318.7 },
+    { "week": "Week 2", "collected": 1652890.3, "remitted": 388741.2 },
+    { "week": "Week 3", "collected": 1721540.9, "remitted": 251884.6 },
+    { "week": "Week 4", "collected": 1629771.7, "remitted": 49739.8 }
+  ]
+}
