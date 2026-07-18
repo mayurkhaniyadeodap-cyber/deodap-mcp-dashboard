@@ -6,6 +6,7 @@ import CodPage from "@/pages/CodPage";
 import CouriersPage from "@/pages/CouriersPage";
 import DashboardPage from "@/pages/DashboardPage";
 import DiscrepanciesPage from "@/pages/DiscrepanciesPage";
+import DisputeLinesPage from "@/pages/DisputeLinesPage";
 import ExportPage from "@/pages/ExportPage";
 import LoginPage from "@/pages/LoginPage";
 import NotFound from "@/pages/NotFound";
@@ -45,6 +46,7 @@ export const router = createBrowserRouter([
           { path: "/bills", element: <BillsPage /> },
           { path: "/couriers", element: <CouriersPage /> },
           { path: "/discrepancies", element: <DiscrepanciesPage /> },
+          { path: "/dispute-lines", element: <DisputeLinesPage /> },
           { path: "/cod", element: <CodPage /> },
           { path: "/zones", element: <ZonesPage /> },
           { path: "/weight", element: <WeightPage /> },

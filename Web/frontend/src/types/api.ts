@@ -53,6 +53,8 @@ export type WeightSummary = Schemas["WeightSummary"];
 // --- COD ---
 export type CodResponse = Schemas["CodResponse"];
 export type CodCourier = Schemas["CodCourier"];
+export type CodPendingResponse = Schemas["CodPendingResponse"];
+export type CodPendingCourier = Schemas["CodPendingCourier"];
 export type CodWeekly = Schemas["CodWeekly"];
 
 // --- Trend ---
@@ -69,6 +71,15 @@ export type Preferences = Schemas["Preferences"];
 
 // --- Discrepancies ---
 export type DiscrepancyResponse = Schemas["DiscrepancyResponse"];
+export type ReconciliationResponse = Schemas["ReconciliationResponse"];
+export type ClaimableRateResponse = Schemas["ClaimableRateResponse"];
+export type DisputeLine = Schemas["DisputeLine"];
+export type DisputeLinesResponse = Schemas["DisputeLinesResponse"];
+export type DisputeInvoiceGroup = Schemas["DisputeInvoiceGroup"];
+export type DisputeInvoicesResponse = Schemas["DisputeInvoicesResponse"];
+export type WeightDispute = Schemas["WeightDispute"];
+export type RateDispute = Schemas["RateDispute"];
+export type ReconciledCourier = Schemas["ReconciledCourier"];
 export type RateDiff = Schemas["RateDiff"];
 export type CourierRate = Schemas["CourierRate"];
 
@@ -83,4 +94,5 @@ export type ExportDataset = Schemas["ExportDataset"];
 // --- MCP status view ---
 export type StatusResponse = Schemas["StatusResponse"];
 export type EndpointStatus = Schemas["EndpointStatus"];
+export type Capability = Schemas["Capability"];
 

@@ -18,7 +18,7 @@ from app.api.routers import analytics, auth, bills, dashboard, export, mcp_debug
 from app.core.config import DEV_JWT_SECRET, settings
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.request_id import RequestIDMiddleware
-from app.services import user_store
+from app.services import discrepancy_service, recovery_service, user_store
 
 logger = logging.getLogger("startup")
 
@@ -46,6 +46,18 @@ def _startup() -> None:
     # Create tables (idempotent) and seed the first admin from env if empty.
     user_store.init_db_and_seed()
     logger.info("Startup complete (env=%s, mcp_debug=%s).", settings.environment, settings.enable_mcp_debug)
+
+
+@app.on_event("startup")
+async def _start_background_jobs() -> None:
+    # Keep the slow enumerations OFF the request path: schedulers recompute them on
+    # a fixed cadence and the endpoints always serve the warm result.
+    #   • claimable-rate  (~260s) — every 30 min
+    #   • dispute-lines   (enumeration per window+min_diff) — every 30 min
+    #   • trend-recovery  (~27s)  — every 10 min
+    discrepancy_service.start_claimable_scheduler()
+    discrepancy_service.start_lines_scheduler()
+    recovery_service.start_recovery_scheduler()
 
 # --- Middleware (order matters: request-id outermost so it wraps everything) ---
 app.add_middleware(RequestIDMiddleware)

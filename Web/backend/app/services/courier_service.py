@@ -79,8 +79,21 @@ def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", n)
 
 
+def _recon_status(row: dict | None) -> str:
+    """Per-courier reconciliation status from reconciliation_summary:
+      no rows yet → "Pending" (not reconciled), any unreconciled lines →
+      "Unreconciled", else fully "Reconciled".
+
+    NOTE: the tool's "Disputed" bucket is a backlog/lag artifact (it does not decay
+    with age — a 41-day window shows ~225k, a 14-month window ~822k), so these are
+    pending-reconciliation lines, NOT confirmed carrier disputes. Labeled honestly."""
+    if not row or int(row.get("rows", 0) or 0) == 0:
+        return "Pending"
+    return "Unreconciled" if int(row.get("disputed", 0) or 0) > 0 else "Reconciled"
+
+
 def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float,
-                 remitted: float | None) -> dict:
+                 remitted: float | None, status: str | None) -> dict:
     """Map a joined (performance + cost) row to Courier fields — all LIVE.
 
     No derived surcharges/rating/recon status (those were fabricated). "Total
@@ -102,6 +115,7 @@ def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float,
         "rto_pct": round(rto_pct, 2), "cod_value": round(cod_value, 2),
         "freight": freight, "rto": rto_amt,
         "remitted": None if remitted is None else round(remitted, 2),
+        "status": status,
     }
 
 
@@ -123,12 +137,13 @@ def _date_args(date_from: str | None, date_to: str | None) -> dict:
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courier]:
     date_args = _date_args(date_from, date_to)
-    perf_raw, cost_raw, rto_raw, oa_raw, aging_raw = await asyncio.gather(
+    perf_raw, cost_raw, rto_raw, oa_raw, aging_raw, recon_raw = await asyncio.gather(
         mcp_client.call_tool("courier_performance", {**date_args}),
         mcp_client.call_tool("shipping_cost_summary", {"group_by": "courier", **date_args}),
         mcp_client.call_tool("rto_analysis", {**date_args}),
         mcp_client.call_tool("order_analytics", {"group_by": "courier", **date_args}),
         mcp_client.call_tool("cod_remittance_aging", {"group_by": "courier", **date_args}),
+        mcp_client.call_tool("reconciliation_summary", {"group_by": "courier", **date_args}),
     )
 
     perf_rows = _parse_tool_json(perf_raw).get("couriers", []) or []
@@ -144,6 +159,12 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
         _norm(b.get("group", "")): float(b.get("remitted", 0) or 0)
         for b in _parse_tool_json(aging_raw).get("breakdown", []) or []
     }
+    # Per-courier reconciliation status (Reconciled / Pending / Disputed). Same
+    # DISPLAY-name grouping → join on the normalized name.
+    recon_by_norm = {
+        _norm(b.get("group", "")): b
+        for b in _parse_tool_json(recon_raw).get("breakdown", []) or []
+    }
 
     mapped = []
     for p in perf_rows:
@@ -154,7 +175,8 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
         cod_value = float(oa.get("cod_value", 0) or 0)
         name, _code = _name_and_code(slug)
         remitted = remitted_by_norm.get(_norm(name))
-        mapped.append(_map_courier(p, cost_by_slug.get(slug, {}), rto_pct, cod_value, remitted))
+        status = _recon_status(recon_by_norm.get(_norm(name)))
+        mapped.append(_map_courier(p, cost_by_slug.get(slug, {}), rto_pct, cod_value, remitted, status))
     mapped.sort(key=lambda c: c["freight"] + c["rto"], reverse=True)
     return [Courier(id=i, **row) for i, row in enumerate(mapped, start=1)]
 

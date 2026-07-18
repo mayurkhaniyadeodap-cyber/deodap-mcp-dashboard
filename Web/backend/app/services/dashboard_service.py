@@ -89,34 +89,38 @@ def _load_mock() -> DashboardResponse:
     return DashboardResponse(**load_mock("dashboard.json"))
 
 
-_RATE_LABEL = "Rate Difference to Investigate"
-_RATE_SUB = "forward invoiced − applied · reconciliation_at · lags"
+_RATE_LABEL = "Pending Reconciliation"
+_RATE_SUB = "disputed invoiced − applied · pending reconciliation · lags"
 
 
 def _rate_diff_mock() -> RateDiffKpi:
     # date_field = reconciliation_at: this KPI's window filters on the reconciliation
     # date (not order_date), so the UI can label its basis correctly.
     return RateDiffKpi(
-        kpi=_kpi("rate_diff", _RATE_LABEL, 3339327.39, "currency", _RATE_SUB),
+        kpi=_kpi("rate_diff", _RATE_LABEL, 2749841.0, "currency", _RATE_SUB),
         source="mock", date_field="reconciliation_at",
     )
 
 
 async def _rate_diff_live(date_from: str | None, date_to: str | None) -> RateDiffKpi:
     args = live_support.date_args(date_from, date_to)
-    r = await mcp_client.call_tool("weight_reconciliation_summary", args)
-    cur = float(live_support.parse_tool_json(r).get("fwd_rate_diff", 0) or 0)
-    # No delta: reconciliation posts days late (by reconciliation_at), so the current
-    # window is still filling in — a period-over-period delta would be a maturation
-    # artifact, not a signal. Show the live value only.
+    # Pending Reconciliation = the rate difference on rows still DISPUTED (not yet
+    # reconciled), from reconciliation_summary grouped by status.
+    r = live_support.parse_tool_json(
+        await mcp_client.call_tool("reconciliation_summary", {**args, "group_by": "status"})
+    )
+    disputed = next((b for b in r.get("breakdown", []) or [] if b.get("group") == "Disputed"), None)
+    amt = float((disputed or r.get("totals") or {}).get("rate_diff", 0) or 0)
+    # No delta: reconciliation posts days late (by reconciliation_at), so a
+    # period-over-period delta would be a maturation artifact. Show the live value.
     return RateDiffKpi(
-        kpi=_kpi("rate_diff", _RATE_LABEL, cur, "currency", _RATE_SUB),
+        kpi=_kpi("rate_diff", _RATE_LABEL, amt, "currency", _RATE_SUB),
         source="live", date_field="reconciliation_at",
     )
 
 
 async def get_rate_diff(date_from: str | None = None, date_to: str | None = None) -> RateDiffKpi:
-    """Slow 'Rate Diff to Investigate' KPI (weight_reconciliation) — own 60s cache,
+    """Slow 'Pending Reconciliation' KPI (reconciliation_summary) — own 60s cache,
     fetched separately so it never delays the main dashboard."""
     return await live_support.live_or_mock(
         cache=_rate_cache, key=(date_from, date_to), label="dashboard-rate-diff",
@@ -162,8 +166,7 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
     # back; remittance posts days later), so a period delta would be an artifact.
     val_tools = [("order_analytics", {"group_by": "courier"}),
                  ("shipping_cost_summary", {"group_by": "state"}),
-                 ("cod_remittance_summary", {}),
-                 ("sla_performance", {})]
+                 ("cod_remittance_aging", {})]
     val_calls = [mcp_client.call_tool(t, {**val_args, **e}) for t, e in val_tools]
     delta_calls = [
         mcp_client.call_tool("order_analytics", {**cur_args, "group_by": "courier"}),
@@ -173,18 +176,20 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
     ]
     results = await asyncio.gather(*val_calls, *delta_calls, return_exceptions=True)
 
-    val_r, delta_r = results[:4], results[4:]
+    val_r, delta_r = results[:3], results[3:]
     for r in val_r:  # selected-window values are required → fail to mock fallback
         if isinstance(r, Exception):
             raise r
-    oa, state, cod, sla = (live_support.parse_tool_json(r) for r in val_r)
+    oa, state, aging = (live_support.parse_tool_json(r) for r in val_r)
+    # COD Remittance = live per-window remitted from cod_remittance_aging.
+    remitted = float((aging.get("totals") or {}).get("remitted", 0) or 0)
 
     def _pj(r):
         return None if isinstance(r, Exception) else live_support.parse_tool_json(r)
 
     doa_c, dcost_c, doa_p, dcost_p = (_pj(r) for r in delta_r)
     delta_ok = all(x is not None for x in (doa_c, dcost_c, doa_p, dcost_p))
-    cur = _totals(oa, state, cod, sla)  # displayed values (selected window)
+    cur = _totals(oa, state, {}, {})  # displayed values (selected window)
     dc = _totals(doa_c, dcost_c, {}, {}) if delta_ok else None  # complete current
     dp = _totals(doa_p, dcost_p, {}, {}) if delta_ok else None  # complete previous
 
@@ -194,25 +199,15 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
     def dprev(k: str) -> float | None:
         return dp[k] if dp else None
 
-    on_time = int(sla.get("on_time", 0) or 0)
-    late = int(sla.get("late", 0) or 0)
     kpis = [
-        # Volume — real delta, but NEUTRAL tone (fewer/more orders isn't itself a
-        # billing improvement or regression), complete-period basis.
+        # Total Billed Amount = shipping_cost_summary forward + RTO (= total_cost).
+        _delta_kpi("total_billing", "Total Billed Amount", cur["total_cost"], dcur("total_cost"), dprev("total_cost"), "currency", False, "forward + RTO cost"),
+        # Volume — real delta, NEUTRAL tone (more/fewer orders isn't good/bad).
         _delta_kpi("total_shipments", "Total Shipments", cur["orders"], dcur("orders"), dprev("orders"), "number", None),
-        _delta_kpi("total_billing", "Applied Shipping Cost", cur["total_cost"], dcur("total_cost"), dprev("total_cost"), "currency", False),
-        _delta_kpi("average_cost", "Avg Cost / Shipment", cur["avg_cost"], dcur("avg_cost"), dprev("avg_cost"), "currency", False),
-        # COD value is a VOLUME metric (customers choosing COD), not cost/efficiency —
-        # fewer COD orders isn't a billing regression, so tone is NEUTRAL (like shipments).
-        _delta_kpi("total_cod", "COD Value", cur["cod_value"], dcur("cod_value"), dprev("cod_value"), "currency", None),
-        # Lagged metrics — value only, no delta (see note above).
-        _kpi("pending_recon", "Pending Reconciliation", cur["pending"], "number",
-             "COD remittance records not yet settled · remittance lags"),
-        _kpi("on_time", "On-time %", cur["on_time_pct"], "percent",
-             f"of delivered · {on_time:,} on-time / {late:,} late · avg delay "
-             f"{sla.get('avg_delay_days', 0)}d · global"),
-        _kpi("overdue", "Overdue in Transit", cur["overdue"], "number",
-             "past promised EDD, still undelivered · point-in-time snapshot"),
+        # Avg Cost/Shipment = Total Billed ÷ Total Shipments.
+        _delta_kpi("average_cost", "Avg Cost/Shipment", cur["avg_cost"], dcur("avg_cost"), dprev("avg_cost"), "currency", False),
+        # COD Remittance = live remitted (cod_remittance_aging); remittance lags → no delta.
+        _kpi("total_cod", "COD Remittance", remitted, "currency", "actual COD remitted (cod_remittance_aging) · lags a few days"),
     ]
 
     # Distribution — orders per courier.

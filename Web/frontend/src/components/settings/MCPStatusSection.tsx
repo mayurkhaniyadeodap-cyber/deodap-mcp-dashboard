@@ -11,21 +11,6 @@ import type { EndpointStatus } from "@/types/api";
 // compute a "not probed" count — never to change what the server returns.
 const SLOW_ENDPOINTS = ["/api/trend-recovery", "/api/savings-opportunity"];
 
-// Static — from our MCP audit, grouped by domain. Each needs a server-side MCP
-// enhancement before it can be built truthfully; until then the UI never fakes it.
-// (The blocked COUNT in the header derives from this list's length, not a literal.)
-const BLOCKED_GROUPS: { domain: string; missing: string; needs: string }[] = [
-  { domain: "COD", missing: "Courier-wise COD remitted", needs: 'cod_remittance_summary(group_by="courier")' },
-  { domain: "Reconciliation", missing: "Courier-wise reconciliation", needs: 'weight_reconciliation_summary(group_by="courier")' },
-  {
-    domain: "Invoice",
-    missing: "Per-AWB invoiced rate & weight",
-    needs: "invoiced_courier_rate + invoiced_weight_kg exposed\n(or a new list_reconciliation_lines tool)",
-  },
-  { domain: "Cost", missing: "GST / COD aggregate components", needs: "shipping_cost_summary(include_components=true)" },
-  { domain: "Zone", missing: "Zone analytics", needs: "a canonical zone dimension in group_by" },
-  { domain: "Trend", missing: "Daily trend per courier", needs: 'daily_booking_trend(group_by="courier")' },
-];
 
 function SourcePill({ source }: { source: EndpointStatus["source"] }) {
   const live = source === "live";
@@ -66,7 +51,12 @@ export function MCPStatusSection() {
   const mockCount = endpoints.filter((e) => e.source === "mock").length;
   const probed = new Set(endpoints.map((e) => e.endpoint));
   const notProbed = SLOW_ENDPOINTS.filter((s) => !probed.has(s)).length; // skipped slow endpoints
-  const blockedCount = BLOCKED_GROUPS.length;
+  // Capabilities are decided LIVE from the MCP tool schemas (server-side). Blocked
+  // count = those still unavailable — never a hardcoded number.
+  const capabilities = data?.capabilities ?? [];
+  const blockedGroups = capabilities.filter((c) => !c.available);
+  const resolvedGroups = capabilities.filter((c) => c.available);
+  const blockedCount = blockedGroups.length;
 
   // Tool Health — built by INVERTING endpoint → mcp_tools from the response. No MCP call.
   const toolHealth = useMemo(() => {
@@ -140,7 +130,8 @@ export function MCPStatusSection() {
                 <span className={cn("font-semibold", mockCount > 0 && "text-warning")}>{mockCount}</span> mock ·{" "}
                 <span className="font-semibold">{notProbed}</span> not probed
                 {notProbed > 0 ? " (slow — enable Include slow)" : ""} ·{" "}
-                <span className="font-semibold">{blockedCount}</span> blocked pending MCP enhancement
+                <span className="font-semibold text-success">{resolvedGroups.length}</span> capabilities unblocked ·{" "}
+                <span className={cn("font-semibold", blockedCount > 0 && "text-warning")}>{blockedCount}</span> blocked pending MCP enhancement
               </div>
             </>
           )}
@@ -243,29 +234,66 @@ export function MCPStatusSection() {
         </CardContent>
       </Card>
 
-      {/* Blocked — grouped by domain */}
+      {/* Capabilities — decided live from the MCP tool schemas. Blocked = still
+          unavailable; Unblocked = a tool/param now satisfies it. */}
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0">
           <Ban className="size-4 text-warning" />
-          <CardTitle className="text-base">Blocked — needs MCP enhancement</CardTitle>
+          <CardTitle className="text-base">
+            Capabilities — {blockedCount} blocked, {resolvedGroups.length} unblocked (live from tool schemas)
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <ul className="space-y-3">
-            {BLOCKED_GROUPS.map((g) => (
-              <li key={g.domain} className="grid grid-cols-1 gap-1 sm:grid-cols-[130px_1fr] sm:gap-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-                  <span className="text-sm font-semibold">{g.domain}</span>
+        <CardContent className="space-y-5">
+          {isLoading || !data ? (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : (
+            <>
+              {blockedGroups.length > 0 && (
+                <ul className="space-y-3">
+                  {blockedGroups.map((g) => (
+                    <li key={g.domain} className="grid grid-cols-1 gap-1 sm:grid-cols-[130px_1fr] sm:gap-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                        <span className="text-sm font-semibold">{g.domain}</span>
+                      </div>
+                      <div className="min-w-0 sm:pt-0.5">
+                        <div className="text-sm">{g.capability}</div>
+                        <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                          Needs: {g.needs}
+                        </pre>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {resolvedGroups.length > 0 && (
+                <div>
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Recently unblocked
+                  </div>
+                  <ul className="space-y-3">
+                    {resolvedGroups.map((g) => (
+                      <li key={g.domain} className="grid grid-cols-1 gap-1 sm:grid-cols-[130px_1fr] sm:gap-3">
+                        <div className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+                          <span className="text-sm font-semibold">{g.domain}</span>
+                        </div>
+                        <div className="min-w-0 sm:pt-0.5">
+                          <div className="text-sm">{g.capability}</div>
+                          <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                            {g.resolved_by ? `Resolved by: ${g.resolved_by}` : `Satisfies: ${g.needs}`}
+                          </pre>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div className="min-w-0 sm:pt-0.5">
-                  <div className="text-sm">{g.missing}</div>
-                  <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                    Needs: {g.needs}
-                  </pre>
-                </div>
-              </li>
-            ))}
-          </ul>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

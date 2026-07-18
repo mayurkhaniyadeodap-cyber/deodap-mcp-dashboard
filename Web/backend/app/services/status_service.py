@@ -16,7 +16,7 @@ from time import monotonic, perf_counter
 from typing import Awaitable, Callable
 
 from app.core.config import settings
-from app.schemas.status import EndpointStatus, StatusResponse
+from app.schemas.status import Capability, EndpointStatus, StatusResponse
 from app.services import (
     cod_service,
     courier_service,
@@ -154,26 +154,84 @@ async def _probe(endpoint: str, tools: list[str], notes: str, factory: Callable[
     return EndpointStatus(endpoint=endpoint, source=source, mcp_tools=tools, load_ms=load_ms, notes=notes)
 
 
-async def _mcp_header() -> tuple[bool, int]:
+def _group_by_values(tool) -> set[str]:
+    """The group_by dimensions a tool accepts — from the enum if present, else
+    parsed from its 'One of: a, b, c.' description."""
+    sch = getattr(tool, "inputSchema", None) or {}
+    gb = (sch.get("properties") or {}).get("group_by") or {}
+    if gb.get("enum"):
+        return {str(v).strip().lower() for v in gb["enum"]}
+    desc = str(gb.get("description", ""))
+    tail = desc.split(":", 1)[1] if ":" in desc else desc
+    return {p.strip().strip(".").lower() for p in tail.split(",") if p.strip()}
+
+
+def _has_param(tool, name: str) -> bool:
+    sch = getattr(tool, "inputSchema", None) or {}
+    return name in (sch.get("properties") or {})
+
+
+def _capabilities(tools: list) -> list[Capability]:
+    """Decide, from the LIVE tool schemas, which advanced capabilities are now
+    buildable and which are still blocked. No hardcoded blocked count — it's the
+    number of specs whose predicate is False right now."""
+    tmap = {t.name: t for t in tools}
+
+    def gb(name: str) -> set[str]:
+        return _group_by_values(tmap[name]) if name in tmap else set()
+
+    def has(name: str, param: str) -> bool:
+        return name in tmap and _has_param(tmap[name], param)
+
+    # (domain, capability, needs, resolved_by-when-available, predicate)
+    specs = [
+        ("COD", "Courier-wise COD remitted / aging",
+         'cod_remittance_aging(group_by="courier")',
+         "cod_remittance_aging", "courier" in gb("cod_remittance_aging")),
+        ("Reconciliation", "Courier-wise reconciliation",
+         'reconciliation_summary(group_by="courier")',
+         "reconciliation_summary", "courier" in gb("reconciliation_summary")),
+        ("Invoice", "Per-AWB invoiced rate & weight",
+         "reconciliation_disputes (per-AWB lines)",
+         "reconciliation_disputes", "reconciliation_disputes" in tmap),
+        ("Cost", "GST / COD aggregate cost components",
+         "shipping_cost_summary(include_components=true)",
+         "shipping_cost_summary", has("shipping_cost_summary", "include_components")),
+        ("Zone", "Zone analytics dimension",
+         "a canonical zone dimension in group_by",
+         None, any("zone" in gb(n) for n in ("order_analytics", "shipping_cost_summary"))),
+        ("Trend", "Daily trend per courier",
+         'daily_booking_trend(group_by="courier")',
+         "daily_booking_trend", has("daily_booking_trend", "group_by")),
+    ]
+    return [
+        Capability(domain=d, capability=cap, needs=needs,
+                   resolved_by=(resolver if ok else None), available=ok)
+        for d, cap, needs, resolver, ok in specs
+    ]
+
+
+async def _mcp_header() -> tuple[bool, int, list[Capability]]:
     try:
         tools = await mcp_client.list_tools()
-        return True, len(tools)
+        return True, len(tools), _capabilities(tools)
     except Exception as exc:  # noqa: BLE001
         logger.warning("status: list_tools failed (%s)", exc)
-        return False, 0
+        return False, 0, []
 
 
 async def _fetch(include_slow: bool) -> StatusResponse:
     specs = [s for s in _specs() if include_slow or not s[4]]
     header_task = asyncio.create_task(_mcp_header())
     probes = await asyncio.gather(*[_probe(ep, tools, notes, fn) for ep, tools, notes, fn, _slow in specs])
-    mcp_connected, tool_count = await header_task
+    mcp_connected, tool_count, capabilities = await header_task
     return StatusResponse(
         mcp_connected=mcp_connected,
         mcp_url=_safe_mcp_url(),
         tool_count=tool_count,
         token_present=bool(settings.mcp_token),
         endpoints=probes,
+        capabilities=capabilities,
     )
 
 

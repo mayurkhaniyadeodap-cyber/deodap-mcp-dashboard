@@ -19,18 +19,24 @@ export function CourierScorecard({ courier, maxShipments, totalShipments }: Cour
   const color = style.color;
   const barWidth = pct(courier.shipments, maxShipments);
   const volumePct = pct(courier.shipments, totalShipments);
+  // Aggregator note — ShipRocket & Delhivery only (presentation-only clarification).
+  const isAggregatorView = courier.name === "ShipRocket" || courier.name === "Delhivery";
 
   // All live from Ship MCP. Total Billed = freight + rto (our applied cost);
   // Cost/Shipment and RTO Charges % are derived from it; COD Remitted is the live
   // per-courier remittance (cod_remittance_aging) — "N/A" when MCP has no value
   // (e.g. no-COD couriers), never a fabricated number.
   const totalBilled = courier.freight + courier.rto;
+  const rtoChargesPct = totalBilled > 0 ? (courier.rto / totalBilled) * 100 : null;
   const rows: { label: string; value: string }[] = [
     { label: "Total Billed", value: formatCurrencyINR(totalBilled) },
     { label: "Cost/Shipment", value: courier.shipments > 0 ? formatCurrencyINR(totalBilled / courier.shipments) : "N/A" },
-    { label: "RTO Charges %", value: totalBilled > 0 ? formatPercent((courier.rto / totalBilled) * 100) : "N/A" },
+    { label: "RTO Charges %", value: rtoChargesPct != null ? formatPercent(rtoChargesPct) : "N/A" },
     { label: "COD Remitted", value: courier.remitted != null ? formatCurrencyINR(courier.remitted) : "N/A" },
   ];
+  // A genuine 0% RTO is usually immaturity, not perfection — recent shipments haven't
+  // completed their return journeys yet. Note it (never fabricate a non-zero value).
+  const showRtoZeroNote = rtoChargesPct === 0;
 
   return (
     <div
@@ -78,6 +84,20 @@ export function CourierScorecard({ courier, maxShipments, totalShipments }: Cour
           {volumePct.toFixed(1)}% of delivery volume
         </div>
       </div>
+
+      {/* RTO 0% maturity note — a 0% here almost always means returns haven't landed yet. */}
+      {showRtoZeroNote && (
+        <p className="mt-3 border-t border-border pt-3 text-[11px] leading-snug text-muted-foreground">
+          {"Recent shipments may show lower RTO until return journeys complete."}
+        </p>
+      )}
+
+      {/* Aggregator disclosure — ShipRocket & Delhivery only. */}
+      {isAggregatorView && (
+        <p className="mt-3 border-t border-border pt-3 text-[11px] leading-snug text-muted-foreground">
+          {"Aggregator view — ShipRocket's parcels ship via Delhivery et al.; this RTO% is the aggregator's book, not the carrier's own."}
+        </p>
+      )}
     </div>
   );
 }

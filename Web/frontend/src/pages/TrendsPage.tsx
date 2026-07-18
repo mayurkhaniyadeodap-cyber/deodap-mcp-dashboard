@@ -44,7 +44,11 @@ export default function TrendsPage() {
         {recovery.isLoading ? (
           <div className="flex h-full flex-col justify-center gap-2 px-2">
             <Skeleton className="h-40 w-full" />
-            <p className="text-xs text-muted-foreground">Reconciling per month (~30s the first time; cached 10 min)…</p>
+          </div>
+        ) : rec?.computing ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+            Computing the per-month series… (first calculation in progress)
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -76,6 +80,11 @@ export default function TrendsPage() {
           </ResponsiveContainer>
         )}
       </ChartCard>
+      {rec?.recalculating && (
+        <p className="-mt-4 text-xs text-muted-foreground">
+          Recalculating for this range — showing the last computed series.
+        </p>
+      )}
       {rec && rec.points.some((p) => p.partial || p.gap) && (
         <p className="-mt-4 text-xs text-muted-foreground">
           Hollow markers = partial/incomplete months (reconciliation lags — the curve flattens because data is still arriving, not because it's resolved).

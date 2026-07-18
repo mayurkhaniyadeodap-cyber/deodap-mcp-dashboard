@@ -38,3 +38,21 @@ class CodResponse(BaseModel):
     # "mock" whenever the live fetch fails or the MCP token is blank). ---
     source: Literal["live", "mock"] = "mock"
     date_field: str = "order_date"
+
+
+class CodPendingCourier(BaseModel):
+    """Per-courier COD aging (cod_remittance_aging group_by=courier), joined with
+    order_analytics for the COD amount."""
+
+    courier: str
+    cod_shipments: int  # cod_remittance_aging.records
+    cod_amount: float | None = None  # order_analytics.cod_value (None → "N/A")
+    remitted: float  # cod_remittance_aging.remitted
+    pending: float  # cod_remittance_aging.outstanding
+    status: str  # Pending | Settled | Overdue | Mismatched (derived)
+
+
+class CodPendingResponse(BaseModel):
+    rows: list[CodPendingCourier] = []
+    source: Literal["live", "mock"] = "mock"
+    date_field: str = "order_date"

@@ -13,9 +13,10 @@ export function useTrend() {
 }
 
 /**
- * GET /api/trend-recovery?from&to — SLOW cumulative "rate difference identified"
- * (7× weight_reconciliation ≈ 27s, 10-min server cache). Separate so the fast
- * Trend charts render immediately; renders with its own skeleton.
+ * GET /api/trend-recovery?from&to — cumulative "rate difference identified"
+ * (7× weight_reconciliation ≈ 27s to compute, but served INSTANTLY from a warm
+ * background refresh — never computed on the request path). Separate hook so the
+ * fast Trend charts render immediately.
  */
 export function useRecovery() {
   const { from, to } = useDateRange();
@@ -24,5 +25,11 @@ export function useRecovery() {
     queryFn: async () => (await api.get<RecoveryResponse>("/trend-recovery", { params: { from, to } })).data,
     staleTime: 10 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    // While the background job is still computing (or recalculating a freshly-picked
+    // range), poll so the chart flips to the real series the moment it's warm.
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d && (d.computing || d.recalculating) ? 15_000 : false;
+    },
   });
 }

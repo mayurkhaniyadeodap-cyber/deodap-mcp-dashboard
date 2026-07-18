@@ -3,6 +3,15 @@
   "date_field": "order_date",
   "kpis": [
     {
+      "key": "total_billing",
+      "label": "Total Billed Amount",
+      "value": 8264996.55,
+      "format": "currency",
+      "delta": 0.0,
+      "delta_tone": "neutral",
+      "subtitle": "forward + RTO cost"
+    },
+    {
       "key": "total_shipments",
       "label": "Total Shipments",
       "value": 158421.0,
@@ -12,17 +21,8 @@
       "subtitle": null
     },
     {
-      "key": "total_billing",
-      "label": "Applied Shipping Cost",
-      "value": 8264996.55,
-      "format": "currency",
-      "delta": 0.0,
-      "delta_tone": "neutral",
-      "subtitle": null
-    },
-    {
       "key": "average_cost",
-      "label": "Avg Cost / Shipment",
+      "label": "Avg Cost/Shipment",
       "value": 52.17,
       "format": "currency",
       "delta": 0.0,
@@ -31,39 +31,12 @@
     },
     {
       "key": "total_cod",
-      "label": "COD Value",
-      "value": 6702623.44,
+      "label": "COD Remittance",
+      "value": 4344641.62,
       "format": "currency",
       "delta": 0.0,
       "delta_tone": "neutral",
-      "subtitle": null
-    },
-    {
-      "key": "pending_recon",
-      "label": "Pending Reconciliation",
-      "value": 9887.0,
-      "format": "number",
-      "delta": 0.0,
-      "delta_tone": "neutral",
-      "subtitle": "COD remittance records not yet settled"
-    },
-    {
-      "key": "on_time",
-      "label": "On-time %",
-      "value": 77.2,
-      "format": "percent",
-      "delta": 0.0,
-      "delta_tone": "neutral",
-      "subtitle": "of delivered · 65,950 on-time / 19,484 late · avg delay 3.8d · global"
-    },
-    {
-      "key": "overdue",
-      "label": "Overdue in Transit",
-      "value": 7632.0,
-      "format": "number",
-      "delta": 0.0,
-      "delta_tone": "neutral",
-      "subtitle": "past promised EDD, still undelivered"
+      "subtitle": "actual COD remitted (cod_remittance_aging) · lags a few days"
     }
   ],
   "distribution": [

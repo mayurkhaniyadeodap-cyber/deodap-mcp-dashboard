@@ -160,6 +160,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discrepancies/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reconciliation */
+        get: operations["get_reconciliation_api_discrepancies_reconciliation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/disputes/claimable-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Claimable Rate */
+        get: operations["get_claimable_rate_api_disputes_claimable_rate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/disputes/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dispute Lines */
+        get: operations["get_dispute_lines_api_disputes_lines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/disputes/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dispute Invoices */
+        get: operations["get_dispute_invoices_api_disputes_invoices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/savings-opportunity": {
         parameters: {
             query?: never;
@@ -186,6 +254,23 @@ export interface paths {
         };
         /** Get Cod */
         get: operations["get_cod_api_cod_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cod/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cod Pending */
+        get: operations["get_cod_pending_api_cod_pending_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -305,6 +390,49 @@ export interface paths {
         };
         /** Export File */
         get: operations["export_file_api_export__fmt__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/disputes/lines/export/{fmt}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Dispute Lines
+         * @description CSV/XLSX of the CURRENT filtered dispute-line set — the artifact ops sends
+         *     to carriers. Reuses the export renderer; builds the set inline if the page
+         *     hasn't warmed it yet.
+         */
+        get: operations["export_dispute_lines_api_disputes_lines_export__fmt__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/disputes/invoices/export/{fmt}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Dispute Invoices
+         * @description CSV/XLSX invoice SUMMARY (one row per carrier invoice) for the current filter —
+         *     the artifact a carrier contact acts on. Line-item export stays separate.
+         */
+        get: operations["export_dispute_invoices_api_disputes_invoices_export__fmt__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -453,12 +581,86 @@ export interface components {
          * @enum {string}
          */
         BillStatus: "delivered" | "in_transit" | "pending" | "rto" | "discrepancy";
+        /**
+         * Capability
+         * @description A dashboard capability whose feasibility is decided LIVE from the MCP tool
+         *     schemas (not a hardcoded list). `available` flips as the server exposes new
+         *     tools / params — e.g. courier-wise reconciliation unblocked when
+         *     reconciliation_summary(group_by=courier) appeared.
+         */
+        Capability: {
+            /** Domain */
+            domain: string;
+            /** Capability */
+            capability: string;
+            /** Needs */
+            needs: string;
+            /** Resolved By */
+            resolved_by?: string | null;
+            /** Available */
+            available: boolean;
+        };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /**
+         * ClaimableRateResponse
+         * @description Claimable rate difference = Σ rate_diff over reconciliation_disputes rows that
+         *     are (a) material (rate_diff ≥ threshold) AND (b) actually priced (applied rate > 0).
+         *     Rows without an applied rate can't be claimed (the whole invoice looks like an
+         *     overcharge) and small diffs are noise — both are surfaced, not hidden.
+         */
+        ClaimableRateResponse: {
+            /**
+             * Claimable Amount
+             * @default 0
+             */
+            claimable_amount: number;
+            /**
+             * Excluded No Applied Rate
+             * @default 0
+             */
+            excluded_no_applied_rate: number;
+            /**
+             * Excluded Below Threshold
+             * @default 0
+             */
+            excluded_below_threshold: number;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Threshold
+             * @default 50
+             */
+            threshold: number;
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock";
+            /**
+             * Date Field
+             * @default reconciliation_at
+             */
+            date_field: string;
+            /**
+             * Computing
+             * @default false
+             */
+            computing: boolean;
+            /**
+             * Recalculating
+             * @default false
+             */
+            recalculating: boolean;
         };
         /**
          * CodCourier
@@ -471,6 +673,44 @@ export interface components {
             orders: number;
             /** Cod Value */
             cod_value: number;
+        };
+        /**
+         * CodPendingCourier
+         * @description Per-courier COD aging (cod_remittance_aging group_by=courier), joined with
+         *     order_analytics for the COD amount.
+         */
+        CodPendingCourier: {
+            /** Courier */
+            courier: string;
+            /** Cod Shipments */
+            cod_shipments: number;
+            /** Cod Amount */
+            cod_amount?: number | null;
+            /** Remitted */
+            remitted: number;
+            /** Pending */
+            pending: number;
+            /** Status */
+            status: string;
+        };
+        /** CodPendingResponse */
+        CodPendingResponse: {
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["CodPendingCourier"][];
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock";
+            /**
+             * Date Field
+             * @default order_date
+             */
+            date_field: string;
         };
         /** CodResponse */
         CodResponse: {
@@ -530,6 +770,8 @@ export interface components {
             rto: number;
             /** Remitted */
             remitted?: number | null;
+            /** Status */
+            status?: string | null;
         };
         /** CourierBillingResponse */
         CourierBillingResponse: {
@@ -639,6 +881,192 @@ export interface components {
              * @default order_date
              */
             order_date_field: string;
+        };
+        /**
+         * DisputeInvoiceGroup
+         * @description One carrier invoice = a bundle of dispute lines. Totals are summed from the
+         *     SAME enumerated priced lines as the flat view, so Σ(rate_diff_total) equals the
+         *     claimable KPI exactly (never from reconciliation_summary, which is capped and
+         *     counts non-disputed lines too).
+         */
+        DisputeInvoiceGroup: {
+            /** Invoice No */
+            invoice_no: string;
+            /** Courier */
+            courier: string;
+            /** Line Count */
+            line_count: number;
+            /** Rate Diff Total */
+            rate_diff_total: number;
+            /** Date From */
+            date_from?: string | null;
+            /** Date To */
+            date_to?: string | null;
+        };
+        /** DisputeInvoicesResponse */
+        DisputeInvoicesResponse: {
+            /**
+             * Invoices
+             * @default []
+             */
+            invoices: components["schemas"]["DisputeInvoiceGroup"][];
+            /**
+             * Total Matched
+             * @default 0
+             */
+            total_matched: number;
+            /**
+             * Claimable Amount
+             * @default 0
+             */
+            claimable_amount: number;
+            /**
+             * Excluded No Applied Rate
+             * @default 0
+             */
+            excluded_no_applied_rate: number;
+            /**
+             * Couriers
+             * @default []
+             */
+            couriers: string[];
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 25
+             */
+            page_size: number;
+            /**
+             * Min Diff
+             * @default 50
+             */
+            min_diff: number;
+            /**
+             * Date Field
+             * @default reconciliation_at
+             */
+            date_field: string;
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock";
+            /**
+             * Computing
+             * @default false
+             */
+            computing: boolean;
+            /**
+             * Recalculating
+             * @default false
+             */
+            recalculating: boolean;
+        };
+        /** DisputeLine */
+        DisputeLine: {
+            /** Awb */
+            awb: string;
+            /** Invoice No */
+            invoice_no?: string | null;
+            /** Courier */
+            courier: string;
+            /** Courier Slug */
+            courier_slug: string;
+            /** Order Date */
+            order_date?: string | null;
+            /**
+             * Is Rto
+             * @default false
+             */
+            is_rto: boolean;
+            /** Applied Weight Kg */
+            applied_weight_kg: number;
+            /** Invoiced Weight Kg */
+            invoiced_weight_kg: number;
+            /** Weight Diff Kg */
+            weight_diff_kg: number;
+            /** Applied Rate */
+            applied_rate: number;
+            /** Invoiced Rate */
+            invoiced_rate: number;
+            /** Rate Diff */
+            rate_diff: number;
+            /** Status */
+            status: string;
+        };
+        /** DisputeLinesResponse */
+        DisputeLinesResponse: {
+            /**
+             * Lines
+             * @default []
+             */
+            lines: components["schemas"]["DisputeLine"][];
+            /**
+             * Total Matched
+             * @default 0
+             */
+            total_matched: number;
+            /**
+             * Claimable Amount
+             * @default 0
+             */
+            claimable_amount: number;
+            /**
+             * Excluded No Applied Rate
+             * @default 0
+             */
+            excluded_no_applied_rate: number;
+            /**
+             * Couriers
+             * @default []
+             */
+            couriers: string[];
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 50
+             */
+            page_size: number;
+            /**
+             * Min Diff
+             * @default 50
+             */
+            min_diff: number;
+            /**
+             * Sort By
+             * @default rate_diff
+             */
+            sort_by: string;
+            /**
+             * Date Field
+             * @default reconciliation_at
+             */
+            date_field: string;
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock";
+            /**
+             * Computing
+             * @default false
+             */
+            computing: boolean;
+            /**
+             * Recalculating
+             * @default false
+             */
+            recalculating: boolean;
         };
         /** DistributionSlice */
         DistributionSlice: {
@@ -816,6 +1244,67 @@ export interface components {
              */
             date_field: string;
         };
+        /** RateDispute */
+        RateDispute: {
+            /** Awb */
+            awb: string;
+            /** Courier */
+            courier: string;
+            /** Applied Rate */
+            applied_rate: number;
+            /** Invoiced Rate */
+            invoiced_rate: number;
+            /** Rate Diff */
+            rate_diff: number;
+        };
+        /** ReconciledCourier */
+        ReconciledCourier: {
+            /** Courier */
+            courier: string;
+            /** Reconciled Lines */
+            reconciled_lines: number;
+            /** Reconciled Amount */
+            reconciled_amount: number;
+        };
+        /** ReconciliationResponse */
+        ReconciliationResponse: {
+            /**
+             * Weight Disputes
+             * @default []
+             */
+            weight_disputes: components["schemas"]["WeightDispute"][];
+            /**
+             * Weight Total
+             * @default 0
+             */
+            weight_total: number;
+            /**
+             * Rate Disputes
+             * @default []
+             */
+            rate_disputes: components["schemas"]["RateDispute"][];
+            /**
+             * Rate Total
+             * @default 0
+             */
+            rate_total: number;
+            /**
+             * Reconciled
+             * @default []
+             */
+            reconciled: components["schemas"]["ReconciledCourier"][];
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock";
+            /**
+             * Date Field
+             * @default order_date
+             */
+            date_field: string;
+        };
         /** RecoveryPoint */
         RecoveryPoint: {
             /** Month */
@@ -850,6 +1339,16 @@ export interface components {
              * @default reconciliation_at
              */
             date_field: string;
+            /**
+             * Computing
+             * @default false
+             */
+            computing: boolean;
+            /**
+             * Recalculating
+             * @default false
+             */
+            recalculating: boolean;
         };
         /**
          * Role
@@ -946,6 +1445,11 @@ export interface components {
             token_present: boolean;
             /** Endpoints */
             endpoints: components["schemas"]["EndpointStatus"][];
+            /**
+             * Capabilities
+             * @default []
+             */
+            capabilities: components["schemas"]["Capability"][];
         };
         /** TokenResponse */
         TokenResponse: {
@@ -1077,6 +1581,21 @@ export interface components {
             bucket: string;
             /** Count */
             count: number;
+        };
+        /** WeightDispute */
+        WeightDispute: {
+            /** Awb */
+            awb: string;
+            /** Courier */
+            courier: string;
+            /** Expected Weight Kg */
+            expected_weight_kg: number;
+            /** Billed Weight Kg */
+            billed_weight_kg: number;
+            /** Weight Diff Kg */
+            weight_diff_kg: number;
+            /** Status */
+            status: string;
         };
         /** WeightPoint */
         WeightPoint: {
@@ -1487,6 +2006,153 @@ export interface operations {
             };
         };
     };
+    get_reconciliation_api_discrepancies_reconciliation_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconciliationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_claimable_rate_api_disputes_claimable_rate_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimableRateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dispute_lines_api_disputes_lines_get: {
+        parameters: {
+            query?: {
+                min_diff?: number;
+                sort_by?: string;
+                courier_slug?: string | null;
+                invoice_no?: string | null;
+                page?: number;
+                page_size?: number;
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisputeLinesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dispute_invoices_api_disputes_invoices_get: {
+        parameters: {
+            query?: {
+                min_diff?: number;
+                courier_slug?: string | null;
+                invoice_no?: string | null;
+                page?: number;
+                page_size?: number;
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisputeInvoicesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_savings_opportunity_api_savings_opportunity_get: {
         parameters: {
             query?: {
@@ -1542,6 +2208,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cod_pending_api_cod_pending_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodPendingResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1735,6 +2435,85 @@ export interface operations {
         parameters: {
             query?: {
                 dataset?: string;
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                fmt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_dispute_lines_api_disputes_lines_export__fmt__get: {
+        parameters: {
+            query?: {
+                min_diff?: number;
+                sort_by?: string;
+                courier_slug?: string | null;
+                invoice_no?: string | null;
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                fmt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_dispute_invoices_api_disputes_invoices_export__fmt__get: {
+        parameters: {
+            query?: {
+                min_diff?: number;
+                courier_slug?: string | null;
+                invoice_no?: string | null;
                 /** @description Start date YYYY-MM-DD */
                 from?: string | null;
                 /** @description End date YYYY-MM-DD */

@@ -12,6 +12,7 @@ oldest page), which is fast (1-2 MCP calls) and makes every range's file
 distinct. total_matched is logged so the full range size stays visible.
 """
 
+import asyncio
 import csv
 import io
 import logging
@@ -85,16 +86,25 @@ FORMATS = ["csv", "xlsx"]
 def catalog() -> ExportCatalog:
     """Available datasets (+ nominal row counts) and formats for the Export page."""
     datasets = []
+    total = 0
     for key, cfg in _DATASETS.items():
         rows = cfg["extract"](load_mock(cfg["file"]))
+        total += len(rows)
         datasets.append(
             ExportDataset(key=key, label=cfg["label"], description=cfg["description"], rows=len(rows))
         )
+    # Composite: every dataset in one file (CSV combined w/ a Dataset column; XLSX
+    # one sheet each). Nominal count = sum of the parts.
+    datasets.append(ExportDataset(
+        key="all", label="All Data",
+        description="Complete dashboard export containing all available live MCP data.",
+        rows=total,
+    ))
     return ExportCatalog(datasets=datasets, formats=FORMATS)
 
 
 def is_valid_dataset(dataset: str) -> bool:
-    return dataset in _DATASETS
+    return dataset == "all" or dataset in _DATASETS
 
 
 async def _bills_rows(date_from: str | None, date_to: str | None) -> list[dict]:
@@ -146,6 +156,64 @@ async def _dataset_rows(dataset: str, date_from: str | None, date_to: str | None
     return rows
 
 
+# "All Data" sheet layout (sheet name, source, headers). Sources are the SAME
+# services the individual datasets use — no duplicated fetch logic.
+_WEIGHT_HEADERS = ["courier", "awb", "expected_weight_kg", "billed_weight_kg", "weight_diff_kg", "status"]
+_RECONCILED_HEADERS = ["courier", "reconciled_lines", "reconciled_amount"]
+
+
+async def _all_sections(date_from: str | None, date_to: str | None) -> list[tuple[str, list[str], list[dict]]]:
+    """Fetch every section concurrently through its real service (live only)."""
+    bills, couriers, cod, disc, zones, recon = await asyncio.gather(
+        _dataset_rows("bills", date_from, date_to),
+        _dataset_rows("couriers", date_from, date_to),
+        _dataset_rows("cod", date_from, date_to),
+        _dataset_rows("discrepancies", date_from, date_to),
+        _dataset_rows("zones", date_from, date_to),
+        discrepancy_service.get_reconciliation(date_from=date_from, date_to=date_to),
+    )
+    return [
+        ("Bills", _DATASETS["bills"]["headers"], bills),
+        ("Courier Comparison", _DATASETS["couriers"]["headers"], couriers),
+        ("COD Reconciliation", _DATASETS["cod"]["headers"], cod),
+        ("RTO Analysis", _DATASETS["discrepancies"]["headers"], disc),
+        ("Weight Discrepancies", _WEIGHT_HEADERS, [w.model_dump(mode="json") for w in recon.weight_disputes]),
+        ("Reconciliation Summary", _RECONCILED_HEADERS, [r.model_dump(mode="json") for r in recon.reconciled]),
+        ("State Analysis", _DATASETS["zones"]["headers"], zones),
+    ]
+
+
+def _render_all_bytes(sections: list[tuple[str, list[str], list[dict]]], fmt: str) -> tuple[bytes, str]:
+    if fmt == "csv":
+        # One flat file: a leading "Dataset" column identifies the section; the
+        # rest is the union of every section's headers (blank where N/A).
+        union: list[str] = []
+        for _, headers, _ in sections:
+            for h in headers:
+                if h not in union:
+                    union.append(h)
+        fieldnames = ["Dataset", *union]
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for sheet, headers, rows in sections:
+            for row in rows:
+                writer.writerow({"Dataset": sheet, **{h: row.get(h) for h in headers}})
+        return buf.getvalue().encode("utf-8-sig"), "text/csv"
+
+    # XLSX: one sheet per section.
+    wb = Workbook()
+    wb.remove(wb.active)
+    for sheet, headers, rows in sections:
+        ws = wb.create_sheet(title=sheet[:31])
+        ws.append(headers)
+        for row in rows:
+            ws.append([row.get(h) for h in headers])
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
 def _filename(dataset: str, fmt: str, date_from: str | None, date_to: str | None) -> str:
     if date_from and date_to:
         return f"deodap_{dataset}_{date_from}_{date_to}.{fmt}"
@@ -187,10 +255,15 @@ async def render(
     if cached is not None and (now - cached[0]) < live_support.CACHE_TTL_SECONDS:
         return cached[1]
 
-    headers = _DATASETS[dataset]["headers"]
-    rows = await _dataset_rows(dataset, date_from, date_to)
-    filename = _filename(dataset, fmt, date_from, date_to)
-    content, media_type = _render_bytes(headers, rows, fmt, dataset)
+    if dataset == "all":
+        sections = await _all_sections(date_from, date_to)
+        content, media_type = _render_all_bytes(sections, fmt)
+        filename = _filename("all_data", fmt, date_from, date_to)
+    else:
+        headers = _DATASETS[dataset]["headers"]
+        rows = await _dataset_rows(dataset, date_from, date_to)
+        filename = _filename(dataset, fmt, date_from, date_to)
+        content, media_type = _render_bytes(headers, rows, fmt, dataset)
 
     result = (content, media_type, filename)
     _render_cache[key] = (now, result)

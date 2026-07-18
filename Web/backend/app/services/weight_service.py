@@ -15,7 +15,6 @@ from app.schemas.weight import WeightBucket, WeightPoint, WeightResponse, Weight
 from app.services import live_support, mcp_client
 from app.services.courier_service import _name_and_code
 from app.services.order_sampling import sample_orders
-from app.utils.mock import load_mock
 
 _cache = live_support.new_cache()
 _SCATTER_CAP = 500  # rendered scatter points
@@ -24,8 +23,19 @@ _SCATTER_CAP = 500  # rendered scatter points
 _SLABS = [("0–0.5", 0.5), ("0.5–1", 1.0), ("1–2", 2.0), ("2–5", 5.0), ("5+", float("inf"))]
 
 
-def _load_mock() -> WeightResponse:
-    return WeightResponse(**load_mock("weight.json"))
+def _empty_fallback() -> WeightResponse:
+    """On MCP failure / blank token: return EMPTY data (source="mock") so the page
+    renders its existing empty state — never a weight.json fixture / sample numbers.
+    has_recon=False drives the "no reconciliation lines" empty card; empty scatter /
+    histogram render empty charts."""
+    return WeightResponse(
+        scatter=[], histogram=[],
+        summary=WeightSummary(
+            reconciliation_lines=0, weight_overcharged=0, weight_diff_kg=0.0,
+            fwd_rate_diff=0.0, reconciled=0, disputed=0, has_recon=False,
+        ),
+        source="mock",
+    )
 
 
 def _bucketize(weights: list[float]) -> list[WeightBucket]:
@@ -100,5 +110,5 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> WeightRespo
 async def get_weight(date_from: str | None = None, date_to: str | None = None) -> WeightResponse:
     return await live_support.live_or_mock(
         cache=_cache, key=(date_from, date_to), label="weight",
-        fetch=lambda: _fetch_live(date_from, date_to), mock=_load_mock,
+        fetch=lambda: _fetch_live(date_from, date_to), mock=_empty_fallback,
     )

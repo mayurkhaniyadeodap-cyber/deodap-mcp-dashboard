@@ -24,3 +24,4 @@ class Courier(BaseModel):
     freight: float  # shipping_cost_summary.fwd_cost
     rto: float  # shipping_cost_summary.rto_cost
     remitted: float | None = None  # cod_remittance_aging.remitted per courier (None → "N/A")
+    status: str | None = None  # reconciliation_summary: "Reconciled" | "Pending" | "Unreconciled"

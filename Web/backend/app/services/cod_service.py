@@ -16,24 +16,25 @@ import asyncio
 import logging
 from datetime import date, timedelta
 
-from app.schemas.cod import CodCourier, CodResponse, CodWeekly
+from app.schemas.cod import CodCourier, CodPendingCourier, CodPendingResponse, CodResponse, CodWeekly
 from app.schemas.dashboard import Kpi
 from app.services import live_support, mcp_client
-from app.services.courier_service import _name_and_code
+from app.services.courier_service import _name_and_code, _norm
 from app.services.dashboard_service import _delta_kpi, _delta_windows
 from app.utils.mock import load_mock
 
 logger = logging.getLogger("live")
 _cache = live_support.new_cache()
+_pending_cache = live_support.new_cache()
 
 
 def _load_mock() -> CodResponse:
     return CodResponse(**load_mock("cod.json"))  # source defaults to "mock"
 
 
-def _kpi(key: str, label: str, value: float, fmt: str) -> Kpi:
+def _kpi(key: str, label: str, value: float, fmt: str, subtitle: str | None = None) -> Kpi:
     # No trustworthy period-over-period delta from the MCP → neutral 0 (not faked).
-    return Kpi(key=key, label=label, value=round(value, 2), format=fmt, delta=0.0, delta_tone="neutral")
+    return Kpi(key=key, label=label, value=round(value, 2), format=fmt, delta=0.0, delta_tone="neutral", subtitle=subtitle)
 
 
 def _four_windows(date_from: str | None, date_to: str | None) -> list[tuple[str, str]]:
@@ -120,7 +121,8 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
                    _codv(poa_c) if delta_ok else None, _codv(poa_p) if delta_ok else None, "currency", None),
         _kpi("remitted", "COD Remitted", float(cod_totals.get("remitted", 0) or 0), "currency"),
         _kpi("cod_records", "COD Records", float(cod_totals.get("records", 0) or 0), "number"),
-        _kpi("pending", "Pending Records", pending_records, "number"),
+        _kpi("pending", "Pending Reconciliation Items", pending_records, "number",
+             subtitle="May include reconciliation cycle delays; not confirmed receivables."),
     ]
 
     reconciliation = [
@@ -152,4 +154,58 @@ async def get_cod(date_from: str | None = None, date_to: str | None = None) -> C
     return await live_support.live_or_mock(
         cache=_cache, key=(date_from, date_to), label="cod",
         fetch=lambda: _fetch_live(date_from, date_to), mock=_load_mock,
+    )
+
+
+# --- COD Pending by courier (additive) — per-courier aging from cod_remittance_aging,
+#     joined with order_analytics for the COD amount. Existing get_cod is untouched. ---
+def _cod_status(row: dict) -> str:
+    """Worst-first status from cod_remittance_aging record counts."""
+    if int(row.get("mismatched_records", 0) or 0) > 0:
+        return "Mismatched"
+    if int(row.get("overdue_records", 0) or 0) > 0:
+        return "Overdue"
+    if int(row.get("pending_records", 0) or 0) > 0:
+        return "Pending"
+    return "Settled"
+
+
+def _cod_pending_mock() -> CodPendingResponse:
+    return CodPendingResponse(source="mock")  # empty — never fabricate couriers/amounts
+
+
+async def _cod_pending_live(date_from: str | None, date_to: str | None) -> CodPendingResponse:
+    args = live_support.date_args(date_from, date_to)
+    aging_r, oa_r = await asyncio.gather(
+        mcp_client.call_tool("cod_remittance_aging", {**args, "group_by": "courier"}),
+        mcp_client.call_tool("order_analytics", {**args, "group_by": "courier"}),
+    )
+    aging = live_support.parse_tool_json(aging_r)
+    oa = live_support.parse_tool_json(oa_r)
+    # COD amount per courier (order_analytics groups by slug → display; join on normalized name).
+    cod_by_norm = {
+        _norm(_name_and_code(str(b.get("group", "")))[0]): float(b.get("cod_value", 0) or 0)
+        for b in oa.get("breakdown", []) or []
+        if b.get("group") and b.get("group") != "(none)"
+    }
+    rows = [
+        CodPendingCourier(
+            courier=str(b.get("group", "")),
+            cod_shipments=int(b.get("records", 0) or 0),
+            cod_amount=cod_by_norm.get(_norm(str(b.get("group", "")))),  # None → "N/A"
+            remitted=round(float(b.get("remitted", 0) or 0), 2),
+            pending=round(float(b.get("outstanding", 0) or 0), 2),
+            status=_cod_status(b),
+        )
+        for b in aging.get("breakdown", []) or []
+        if b.get("group") and b.get("group") != "(none)"
+    ]
+    rows.sort(key=lambda r: r.pending, reverse=True)
+    return CodPendingResponse(rows=rows, source="live", date_field="order_date")
+
+
+async def get_cod_pending(date_from: str | None = None, date_to: str | None = None) -> CodPendingResponse:
+    return await live_support.live_or_mock(
+        cache=_pending_cache, key=(date_from, date_to), label="cod-pending",
+        fetch=lambda: _cod_pending_live(date_from, date_to), mock=_cod_pending_mock,
     )

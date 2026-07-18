@@ -22,7 +22,8 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courierStyle } from "@/config/couriers";
 import { useCouriers } from "@/services/couriers.service";
-import { useDashboard, useDashboardCourierBilling, useDashboardRateDiff } from "@/services/dashboard.service";
+import { useClaimableRate, useDashboard, useDashboardCourierBilling } from "@/services/dashboard.service";
+import { useSavingsOpportunity } from "@/services/discrepancies.service";
 import { useDateRange } from "@/store/dateRange.store";
 import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
 import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber } from "@/utils/format";
@@ -50,8 +51,9 @@ const OTHERS_COLOR = "#64748b"; // slate — the merged "Others" donut slice
 export default function DashboardPage() {
   const { data, isLoading, isError, refetch } = useDashboard();
   const couriers = useCouriers();
-  const rateDiff = useDashboardRateDiff();
+  const claimable = useClaimableRate();
   const billing = useDashboardCourierBilling();
+  const savings = useSavingsOpportunity(); // Savings Identified KPI (slow, own skeleton)
 
   if (isError) {
     return (
@@ -93,21 +95,68 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* KPI row — 7 fast KPIs + the slow Rate-Diff card fetched separately */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* KPI row — 4 fast KPIs + 2 slow KPIs (Claimable Rate Difference, Savings) each
+          fetched from its own endpoint with its own skeleton. */}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading || !data
-          ? Array.from({ length: 7 }).map((_, i) => <Card key={i} className="h-[150px] animate-pulse" />)
+          ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="h-[150px] animate-pulse" />)
           : data.kpis.map((kpi) => (
               <KpiCard key={kpi.key} kpi={kpi} source={badge} basis={basisLine(data.date_field)} />
             ))}
-        {/* Rate Diff to Investigate — own endpoint (reconciliation_at basis) */}
-        {rateDiff.isLoading || !rateDiff.data ? (
+        {/* Claimable Rate Difference — honest recoverable ₹ from reconciliation_disputes
+            (rows ≥ ₹50 AND actually priced). Served instantly from a warm background
+            refresh: "computing…" before the first run, and the last-good figure with a
+            "recalculating" note for a freshly-picked range. Excluded buckets shown so
+            nothing disappears (unpriced + sub-threshold noise). */}
+        {claimable.isLoading || !claimable.data ? (
+          <Card className="h-[150px] animate-pulse" />
+        ) : claimable.data.computing ? (
+          <Card className="flex h-[150px] flex-col justify-center gap-2 p-5">
+            <span className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Claimable Rate Difference
+            </span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="size-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+              Computing… (first calculation in progress)
+            </div>
+          </Card>
+        ) : (
+          <KpiCard
+            kpi={{
+              key: "rate_diff",
+              label: "Claimable Rate Difference",
+              value: claimable.data.claimable_amount,
+              format: "currency",
+              delta: 0,
+              delta_tone: "neutral",
+              has_delta: false,
+              subtitle:
+                (claimable.data.recalculating ? "Recalculating for this range — showing last computed figure. " : "") +
+                `${claimable.data.count.toLocaleString("en-IN")} priced rows ≥ ₹${claimable.data.threshold}. ` +
+                `Excluded — unpriced (no applied rate) ${formatCurrencyINRCompact(claimable.data.excluded_no_applied_rate)}` +
+                ` · below ₹${claimable.data.threshold} ${formatCurrencyINRCompact(claimable.data.excluded_below_threshold)}`,
+            }}
+            source={claimable.data.source === "live" ? "live" : "sample"}
+            basis={basisLine(claimable.data.date_field)}
+          />
+        )}
+        {/* Savings Identified — applied vs cheapest serviceable (pincode_serviceability sample) */}
+        {savings.isLoading || !savings.data ? (
           <Card className="h-[150px] animate-pulse" />
         ) : (
           <KpiCard
-            kpi={rateDiff.data.kpi}
-            source={rateDiff.data.source === "live" ? "live" : "sample"}
-            basis={basisLine(rateDiff.data.date_field)}
+            kpi={{
+              key: "savings",
+              label: "Savings Identified",
+              value: savings.data.total_saving,
+              format: "currency",
+              delta: 0,
+              delta_tone: "neutral",
+              has_delta: false,
+              subtitle: `applied vs cheapest serviceable · sampled ${savings.data.sampled} AWBs`,
+            }}
+            source={savings.data.source === "live" ? "live" : "sample"}
+            basis={basisLine("order_date")}
           />
         )}
       </div>

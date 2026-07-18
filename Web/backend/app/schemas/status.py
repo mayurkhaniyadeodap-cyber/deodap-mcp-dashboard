@@ -18,9 +18,23 @@ class EndpointStatus(BaseModel):
     notes: str
 
 
+class Capability(BaseModel):
+    """A dashboard capability whose feasibility is decided LIVE from the MCP tool
+    schemas (not a hardcoded list). `available` flips as the server exposes new
+    tools / params — e.g. courier-wise reconciliation unblocked when
+    reconciliation_summary(group_by=courier) appeared."""
+
+    domain: str
+    capability: str  # what it would let us build
+    needs: str  # the MCP enhancement it requires
+    resolved_by: str | None = None  # the tool that satisfies it (when available)
+    available: bool
+
+
 class StatusResponse(BaseModel):
     mcp_connected: bool
     mcp_url: str  # token masked
     tool_count: int  # from list_tools()
     token_present: bool
     endpoints: list[EndpointStatus]
+    capabilities: list[Capability] = []  # live-derived; blocked count = Σ(not available)

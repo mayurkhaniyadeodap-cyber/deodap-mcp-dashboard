@@ -24,3 +24,9 @@ class RecoveryResponse(BaseModel):
     points: list[RecoveryPoint]
     source: Literal["live", "mock"] = "mock"
     date_field: str = "reconciliation_at"
+    # Warm-cache state (the ~27s 7× enumeration runs on a background schedule, never
+    # inline). computing = no series yet (first run pending). recalculating = the
+    # series shown is the last-good one for another/older window while a fresh
+    # compute runs in the background. (Same contract as the claimable KPI.)
+    computing: bool = False
+    recalculating: bool = False
