@@ -528,6 +528,8 @@ export interface components {
             freight: number;
             /** Rto */
             rto: number;
+            /** Remitted */
+            remitted?: number | null;
         };
         /** CourierBillingResponse */
         CourierBillingResponse: {

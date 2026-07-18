@@ -20,14 +20,16 @@ export function CourierScorecard({ courier, maxShipments, totalShipments }: Cour
   const barWidth = pct(courier.shipments, maxShipments);
   const volumePct = pct(courier.shipments, totalShipments);
 
-  // Only honest, live per-courier values. Removed: COD Charges % (was a
-  // hardcoded ~1.7% freight×0.02 constant on every courier) and COD Remitted
-  // (per-courier remitted doesn't exist — cod_remittance_summary is global-only).
+  // All live from Ship MCP. Total Billed = freight + rto (our applied cost);
+  // Cost/Shipment and RTO Charges % are derived from it; COD Remitted is the live
+  // per-courier remittance (cod_remittance_aging) — "N/A" when MCP has no value
+  // (e.g. no-COD couriers), never a fabricated number.
+  const totalBilled = courier.freight + courier.rto;
   const rows: { label: string; value: string }[] = [
-    { label: "Cost (our rate card)", value: formatCurrencyINR(courier.freight + courier.rto) },
-    { label: "Cost / Shipment", value: formatCurrencyINR(courier.avg_cost) },
-    { label: "RTO Rate", value: formatPercent(courier.rto_pct) },
-    { label: "COD Value", value: formatCurrencyINR(courier.cod_value) },
+    { label: "Total Billed", value: formatCurrencyINR(totalBilled) },
+    { label: "Cost/Shipment", value: courier.shipments > 0 ? formatCurrencyINR(totalBilled / courier.shipments) : "N/A" },
+    { label: "RTO Charges %", value: totalBilled > 0 ? formatPercent((courier.rto / totalBilled) * 100) : "N/A" },
+    { label: "COD Remitted", value: courier.remitted != null ? formatCurrencyINR(courier.remitted) : "N/A" },
   ];
 
   return (

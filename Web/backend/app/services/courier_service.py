@@ -14,6 +14,7 @@ committed mock JSON is returned so the app never breaks in dev.
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -69,11 +70,23 @@ def _name_and_code(slug: str) -> tuple[str, str]:
     return name, code
 
 
-def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float) -> dict:
+def _norm(name: str) -> str:
+    """Normalize a courier display name for joining across tools that label the
+    same courier slightly differently (e.g. "Ekart" vs "Ekart Logistics")."""
+    n = (name or "").lower()
+    for w in ("logistics", "courier"):
+        n = n.replace(w, "")
+    return re.sub(r"[^a-z0-9]", "", n)
+
+
+def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float,
+                 remitted: float | None) -> dict:
     """Map a joined (performance + cost) row to Courier fields — all LIVE.
 
-    No derived surcharges/rating/recon status (those were fabricated). "Cost (our
-    rate card)" is freight + rto, computed on the frontend.
+    No derived surcharges/rating/recon status (those were fabricated). "Total
+    Billed" is freight + rto, computed on the frontend. `remitted` is the live
+    per-courier COD remittance (cod_remittance_aging); None when the courier has
+    no remittance record → the UI shows "N/A".
     """
     slug = perf.get("courier_slug", "")
     shipments = int(perf.get("total", 0) or 0)
@@ -88,6 +101,7 @@ def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float) -> di
         "on_time_pct": round(delivery, 2), "total_billing": freight,
         "rto_pct": round(rto_pct, 2), "cod_value": round(cod_value, 2),
         "freight": freight, "rto": rto_amt,
+        "remitted": None if remitted is None else round(remitted, 2),
     }
 
 
@@ -109,11 +123,12 @@ def _date_args(date_from: str | None, date_to: str | None) -> dict:
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courier]:
     date_args = _date_args(date_from, date_to)
-    perf_raw, cost_raw, rto_raw, oa_raw = await asyncio.gather(
+    perf_raw, cost_raw, rto_raw, oa_raw, aging_raw = await asyncio.gather(
         mcp_client.call_tool("courier_performance", {**date_args}),
         mcp_client.call_tool("shipping_cost_summary", {"group_by": "courier", **date_args}),
         mcp_client.call_tool("rto_analysis", {**date_args}),
         mcp_client.call_tool("order_analytics", {"group_by": "courier", **date_args}),
+        mcp_client.call_tool("cod_remittance_aging", {"group_by": "courier", **date_args}),
     )
 
     perf_rows = _parse_tool_json(perf_raw).get("couriers", []) or []
@@ -123,6 +138,12 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
     # far smaller number so it is NOT used.
     rto_count = {c.get("value"): int(c.get("count", 0) or 0) for c in _parse_tool_json(rto_raw).get("by_courier", []) or []}
     oa_by_slug = {b.get("group"): b for b in _parse_tool_json(oa_raw).get("breakdown", []) or []}
+    # Live per-courier COD remitted. cod_remittance_aging groups by DISPLAY name,
+    # so join on the normalized name. Absent courier → None → "N/A" (never faked).
+    remitted_by_norm = {
+        _norm(b.get("group", "")): float(b.get("remitted", 0) or 0)
+        for b in _parse_tool_json(aging_raw).get("breakdown", []) or []
+    }
 
     mapped = []
     for p in perf_rows:
@@ -131,7 +152,9 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
         orders = int(oa.get("orders", 0) or 0)
         rto_pct = round(rto_count.get(slug, 0) / orders * 100, 2) if orders else 0.0
         cod_value = float(oa.get("cod_value", 0) or 0)
-        mapped.append(_map_courier(p, cost_by_slug.get(slug, {}), rto_pct, cod_value))
+        name, _code = _name_and_code(slug)
+        remitted = remitted_by_norm.get(_norm(name))
+        mapped.append(_map_courier(p, cost_by_slug.get(slug, {}), rto_pct, cod_value, remitted))
     mapped.sort(key=lambda c: c["freight"] + c["rto"], reverse=True)
     return [Courier(id=i, **row) for i, row in enumerate(mapped, start=1)]
 
