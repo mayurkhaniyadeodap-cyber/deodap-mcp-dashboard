@@ -39,7 +39,7 @@ class ReconciliationResponse(BaseModel):
     rate_disputes: list[RateDispute] = []
     rate_total: int = 0
     reconciled: list[ReconciledCourier] = []
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"
 
 
@@ -54,7 +54,7 @@ class ClaimableRateResponse(BaseModel):
     excluded_below_threshold: float = 0.0  # positive but < threshold
     count: int = 0  # claimable rows
     threshold: float = 50.0
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "reconciliation_at"
     # Warm-cache state (the ~260s enumeration runs on a background schedule, never
     # inline). computing = no result yet (first run pending). recalculating = the
@@ -62,3 +62,7 @@ class ClaimableRateResponse(BaseModel):
     # compute runs in the background.
     computing: bool = False
     recalculating: bool = False
+    # True when the selected window is still reconciling (its end is within the
+    # reconciliation lag). The figure is real but LOW because most lines haven't been
+    # reconciled yet → the UI shows a maturity note, not a bare "settled ₹0".
+    maturing: bool = False

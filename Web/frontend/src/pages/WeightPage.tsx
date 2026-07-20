@@ -15,18 +15,21 @@ import { ChartCard } from "@/components/shared/ChartCard";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { PageError } from "@/components/shared/PageError";
 import { SourceBadge } from "@/components/shared/SourceBadge";
+import { UnavailableBanner } from "@/components/shared/Unavailable";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SourceStatus } from "@/services/meta.service";
 import { useWeight } from "@/services/weight.service";
 import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
 import { formatCurrencyINR, formatNumber } from "@/utils/format";
+import { badgeFromSource } from "@/utils/source";
 
 export default function WeightPage() {
   const { data, isLoading, isError, refetch } = useWeight();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
-  const badge: SourceStatus = data?.source === "live" ? "live" : "sample";
+  const unavailable = data?.source === "unavailable";
+  const badge: SourceStatus | undefined = badgeFromSource(data?.source);
   const s = data?.summary;
   const hasRecon = s?.has_recon ?? true;
   const n = data?.sample_size ?? 0;
@@ -39,6 +42,7 @@ export default function WeightPage() {
 
   return (
     <div className="space-y-6">
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
       {/* Reconciliation KPIs (reconciliation lines ≈ 2/order, by reconciliation_at — lags) */}
       {!isLoading && s && !hasRecon ? (
         <Card className="p-5 text-sm text-muted-foreground">
@@ -73,6 +77,8 @@ export default function WeightPage() {
           title="Actual vs Charged Weight"
           description={`${sampleLabel} shipments · by ${data?.sample_date_field ?? "order_date"} · points above the line are under-charged on weight`}
           loading={isLoading}
+          unavailable={unavailable}
+          onRetry={() => refetch()}
           height={320}
           action={<SourceBadge status={badge} />}
         >
@@ -93,6 +99,8 @@ export default function WeightPage() {
           title="Weight Slab Distribution"
           description={`${sampleLabel} shipments · by ${data?.sample_date_field ?? "order_date"}`}
           loading={isLoading}
+          unavailable={unavailable}
+          onRetry={() => refetch()}
           height={320}
           action={<SourceBadge status={badge} />}
         >

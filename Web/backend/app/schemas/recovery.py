@@ -22,7 +22,7 @@ class RecoveryPoint(BaseModel):
 
 class RecoveryResponse(BaseModel):
     points: list[RecoveryPoint]
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "reconciliation_at"
     # Warm-cache state (the ~27s 7× enumeration runs on a background schedule, never
     # inline). computing = no series yet (first run pending). recalculating = the

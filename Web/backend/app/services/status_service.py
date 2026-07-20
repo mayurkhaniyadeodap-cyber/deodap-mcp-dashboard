@@ -43,9 +43,11 @@ _cache: dict[bool, tuple[float, StatusResponse]] = {}
 
 
 async def _source_of(coro: Awaitable) -> str:
-    """Await a service getter and read its per-response `source` field."""
+    """Await a service getter and read its per-response `source` field (pass through
+    the honest 'unavailable' state; anything unexpected reads as 'mock')."""
     resp = await coro
-    return "live" if getattr(resp, "source", "mock") == "live" else "mock"
+    src = getattr(resp, "source", "mock")
+    return src if src in ("live", "unavailable") else "mock"
 
 
 async def _couriers_source() -> str:
@@ -56,7 +58,7 @@ async def _couriers_source() -> str:
         await courier_service._fetch_live(None, None)
         return "live"
     except Exception:
-        return "mock"
+        return "unavailable"
 
 
 # (endpoint, mcp_tools, notes, source-probe factory, is_slow) — tools/notes are

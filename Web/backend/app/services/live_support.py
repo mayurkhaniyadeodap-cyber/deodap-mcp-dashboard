@@ -7,6 +7,7 @@ Every endpoint reuses the same pattern as /api/couriers:
     the endpoint's existing mock (response shape stays byte-identical).
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -20,6 +21,12 @@ logger = logging.getLogger("live")
 T = TypeVar("T")
 
 CACHE_TTL_SECONDS = 60.0
+
+# Shared cap across ALL heavy background enumerations (claimable, dispute-lines,
+# recovery). Only ONE runs at a time, so the schedulers can't collectively saturate
+# the (session-per-request) upstream MCP — total background concurrency stays bounded
+# by whichever single job is running (each is itself page-concurrency-capped ≤4).
+background_job_sem = asyncio.Semaphore(1)
 
 
 def new_cache() -> dict:
@@ -53,7 +60,7 @@ async def live_or_mock(
         return cached[1]
 
     if not settings.mcp_connect_url:
-        logger.warning("%s: Ship MCP not configured — using sample data.", label)
+        logger.error("%s: Ship MCP not configured — serving 'data unavailable' (no fixtures).", label)
         return mock()
 
     try:
@@ -64,8 +71,10 @@ async def live_or_mock(
         logger.info("%s: served LIVE from MCP (from=%s to=%s)", label, key[0], key[1])
         return result
     except Exception as exc:  # noqa: BLE001 — never break the app
-        # Concise one-line warning only — never a stack trace for an expected fallback.
-        logger.warning("%s: Ship MCP unavailable (%s) — using sample data.", label, exc)
+        # Log the REAL exception at ERROR so an outage can't hide behind a quiet
+        # fixture. The fallback (mock callable) returns the honest "unavailable"
+        # state by default — fixtures only when USE_MOCK_FALLBACK is on (dev).
+        logger.error("%s: Ship MCP unavailable — serving 'data unavailable'. Cause: %r", label, exc)
         return mock()
 
 

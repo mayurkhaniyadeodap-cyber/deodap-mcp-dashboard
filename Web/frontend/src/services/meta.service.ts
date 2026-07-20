@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 
 /** Data provenance for a single panel. */
-export type SourceStatus = "live" | "sample";
+export type SourceStatus = "live" | "sample" | "unavailable";
 
 /**
  * Per-page → per-panel provenance map from GET /api/_meta/sources. Typed loosely

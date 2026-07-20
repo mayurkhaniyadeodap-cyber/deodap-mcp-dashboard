@@ -26,17 +26,16 @@ const LINE_PAGE_SIZE = 50;
 const INVOICE_PAGE_SIZE = 25;
 const MIN_DIFF_OPTIONS = [10, 50, 100] as const;
 
-// The dispute list uses its OWN matured window (30 days ending ~2 weeks ago) so its
-// reconciliation has settled — no immature rows in a list you file. Must match the
-// backend's matured_window() so the default request hits the pre-warmed cache.
+// The dispute list uses the stable LAST-FULL-MONTH window (matured — reconciliation
+// settled), computed directly here (independent of the date-range presets). MUST
+// match the backend's matured_window() so this page's request hits the pre-warm.
 function maturedWindow(): { from: string; to: string } {
   const fmt = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const to = new Date();
-  to.setDate(to.getDate() - 14);
-  const from = new Date(to);
-  from.setDate(to.getDate() - 29);
-  return { from: fmt(from), to: fmt(to) };
+  const now = new Date();
+  const lastPrev = new Date(now.getFullYear(), now.getMonth(), 0); // last day of previous month
+  const firstPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1); // first day of previous month
+  return { from: fmt(firstPrev), to: fmt(lastPrev) };
 }
 
 type Row = DisputeLine & Record<string, unknown>;
@@ -196,7 +195,7 @@ export default function DisputeLinesPage() {
               </p>
             )}
             <p className="mt-1 text-[12px] text-muted-foreground">
-              Window: {win.from} → {win.to} · matured (reconciliation settled ~2 weeks back, so nothing immature is filed).
+              Window: {win.from} → {win.to} · last full month (matured — reconciliation settled, so nothing immature is filed).
               Filtered on reconciliation date. Each line is a billing line (forward or RTO leg) — AWBs are effectively
               unique, so lines are not deduped. Per-line reconciliation date isn't exposed by the MCP.
             </p>

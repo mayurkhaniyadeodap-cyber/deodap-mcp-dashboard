@@ -90,10 +90,9 @@ export function KpiCard({ kpi, accent: accentProp, icon: iconProp, source, basis
   return (
     <div
       className={cn(
-        // Keep ONLY the top accent bar + icon chip. No coloured outline/glow —
-        // that was decoration. EXCEPTION: a red border when Pending Reconciliation
-        // needs action (a semantic signal, not noise).
-        "group relative overflow-hidden rounded-xl border bg-surface-gradient p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+        // Clean modern tile: top accent bar + subtle icon chip. Red border only when
+        // Pending Reconciliation needs action (a semantic signal, not decoration).
+        "group relative flex flex-col overflow-hidden rounded-2xl border bg-surface-gradient p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
         actionNeeded ? "border-destructive/60" : "border-border hover:border-border/80",
       )}
     >
@@ -103,53 +102,66 @@ export function KpiCard({ kpi, accent: accentProp, icon: iconProp, source, basis
         style={{ background: `linear-gradient(90deg, ${hex}, ${accentAlpha(accent, 0.35)})` }}
       />
 
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {/* 1. Title (+ icon chip, right) */}
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-[12px] font-semibold uppercase leading-tight tracking-wider text-muted-foreground">
           {kpi.label}
         </span>
-        <div className="flex shrink-0 items-center gap-2">
-          <SourceBadge status={source} />
-          <span
-            className="grid size-9 place-items-center rounded-md"
-            style={{ background: accentAlpha(accent, 0.12), color: hex }}
-          >
-            <Icon className="size-5" />
-          </span>
-        </div>
+        <span
+          className="grid size-8 shrink-0 place-items-center rounded-lg"
+          style={{ background: accentAlpha(accent, 0.12), color: hex }}
+        >
+          <Icon className="size-4" />
+        </span>
       </div>
 
-      <div className={cn("mt-3 text-[36px] font-extrabold leading-none tracking-tight", kpi.unavailable && "text-muted-foreground")}>
+      {/* 2. LIVE badge */}
+      {source ? (
+        <div className="mt-2.5">
+          <SourceBadge status={source} />
+        </div>
+      ) : null}
+
+      {/* 3. Large value — full Indian format, tabular for alignment */}
+      <div
+        className={cn(
+          "mt-3 text-[30px] font-bold leading-none tracking-tight tabular-nums",
+          kpi.unavailable && "text-muted-foreground",
+        )}
+      >
         {formatValue(kpi)}
       </div>
 
-      {/* Data basis — which date_field + window this value covers. Always shown so
-          nobody misreads a partial-day / short-window number as broken. */}
+      {/* 4. Date line — which date_field + window this value covers */}
       {basis ? (
-        <div className="mt-2 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-          <CalendarDays className="size-3 shrink-0" />
+        <div className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <CalendarDays className="size-3.5 shrink-0" />
           <span className="truncate">{basis}</span>
         </div>
       ) : null}
 
-      {kpi.subtitle ? (
-        <div className="mt-2 text-[12px] leading-snug text-muted-foreground">{kpi.subtitle}</div>
-      ) : null}
-
-      {/* Delta line: "Action Needed" for pending, a real delta when we have one,
-          otherwise nothing (never a fabricated 0%). */}
+      {/* 5 + 6. Trend (↑/↓ %) + "vs previous month". "Action Needed" for pending;
+          nothing when there's no real delta (never a fabricated 0%). */}
       {actionNeeded ? (
-        <div className="mt-2 flex items-center gap-1.5 text-xs">
-          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 font-semibold text-destructive">
+        <div className="mt-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
             <AlertTriangle className="size-3" /> Action Needed
           </span>
         </div>
       ) : kpi.has_delta ? (
-        <div className="mt-2 flex items-center gap-1.5 text-xs">
+        <div className="mt-3 flex items-center gap-1.5 text-xs">
           <span className={cn("inline-flex items-center gap-0.5 font-semibold", toneClass)}>
             <DeltaArrow className="size-3.5" />
             {formatPercent(Math.abs(kpi.delta))}
           </span>
-          <span className="text-muted-foreground">vs last period</span>
+          <span className="text-muted-foreground">vs previous month</span>
+        </div>
+      ) : null}
+
+      {/* Supplementary context (e.g. excluded breakdown) — below the required order. */}
+      {kpi.subtitle ? (
+        <div className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-snug text-muted-foreground">
+          {kpi.subtitle}
         </div>
       ) : null}
     </div>

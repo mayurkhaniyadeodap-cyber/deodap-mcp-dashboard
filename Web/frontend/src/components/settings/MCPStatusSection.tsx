@@ -14,15 +14,13 @@ const SLOW_ENDPOINTS = ["/api/trend-recovery", "/api/savings-opportunity"];
 
 function SourcePill({ source }: { source: EndpointStatus["source"] }) {
   const live = source === "live";
+  const unavailable = source === "unavailable";
+  const tone = live ? "bg-success/15 text-success" : unavailable ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground";
+  const dot = live ? "bg-success" : unavailable ? "bg-warning" : "bg-muted-foreground/60";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold",
-        live ? "bg-success/15 text-success" : "bg-muted text-muted-foreground",
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", live ? "bg-success" : "bg-muted-foreground/60")} />
-      {live ? "Live" : "Mock"}
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold", tone)}>
+      <span className={cn("size-1.5 rounded-full", dot)} />
+      {live ? "Live" : unavailable ? "Unavailable" : "Mock"}
     </span>
   );
 }

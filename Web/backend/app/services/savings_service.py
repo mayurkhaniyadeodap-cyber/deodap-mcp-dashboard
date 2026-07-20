@@ -19,8 +19,11 @@ from app.services.courier_service import _name_and_code
 
 logger = logging.getLogger("live")
 
-_SAMPLE = 25
-_CONCURRENCY = 6
+# Sample size is a deterministic top-N (see _fetch_live). 40 @ concurrency 10 keeps
+# the cold build (~45s, own skeleton, cached 30 min) close to the old 25-sample cost
+# while giving a steadier estimate. (60 was ~100s — too slow for an inline load.)
+_SAMPLE = 40
+_CONCURRENCY = 10
 _GST = 1.18
 _TTL_SECONDS = 1800  # 30 min
 _cache: dict[tuple, tuple[float, SavingsResponse]] = {}
@@ -29,7 +32,8 @@ _NOTE = "Theoretical maximum — ignores SLA, capacity and routing rules."
 
 
 def _mock() -> SavingsResponse:
-    return SavingsResponse(rows=[], sampled=0, skipped=0, total_saving=0.0, source="mock", note=_NOTE)
+    # Honest "unavailable" (empty) — never fabricated savings.
+    return SavingsResponse(rows=[], sampled=0, skipped=0, total_saving=0.0, source="unavailable", note=_NOTE)
 
 
 async def _rto_by_slug(args: dict) -> dict[str, float]:
@@ -69,8 +73,13 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> SavingsResp
         o for o in all_orders
         if o.get("awb") and o.get("pincode") and o.get("warehouse_id") and (o.get("applied_courier_rate") or 0) > 0
     ]
-    step = max(1, len(eligible) // _SAMPLE)
-    pool = eligible[::step][:_SAMPLE]
+    # DETERMINISTIC sample: the N eligible orders with the lowest AWB. AWB is a
+    # stable per-shipment key, so the SAME shipments are priced on every rebuild —
+    # the KPI can't flicker on refresh with identical inputs. (The old stride
+    # `eligible[::step]` swapped its picks whenever the population shifted slightly.)
+    # De-dupe by AWB first so a shipment appearing on two pages isn't double-weighted.
+    by_awb = {str(o["awb"]): o for o in eligible}
+    pool = [by_awb[a] for a in sorted(by_awb)[:_SAMPLE]]
 
     sem = asyncio.Semaphore(_CONCURRENCY)
 

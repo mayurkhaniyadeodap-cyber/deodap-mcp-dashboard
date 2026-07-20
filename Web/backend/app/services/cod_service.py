@@ -29,7 +29,10 @@ _pending_cache = live_support.new_cache()
 
 
 def _load_mock() -> CodResponse:
-    return CodResponse(**load_mock("cod.json"))  # source defaults to "mock"
+    # Honest "unavailable" (empty) by default — fixtures only in dev (USE_MOCK_FALLBACK).
+    if live_support.settings.use_mock_fallback:
+        return CodResponse(**load_mock("cod.json"))
+    return CodResponse(kpis=[], reconciliation=[], weekly=[], source="unavailable")
 
 
 def _kpi(key: str, label: str, value: float, fmt: str, subtitle: str | None = None) -> Kpi:
@@ -171,7 +174,7 @@ def _cod_status(row: dict) -> str:
 
 
 def _cod_pending_mock() -> CodPendingResponse:
-    return CodPendingResponse(source="mock")  # empty — never fabricate couriers/amounts
+    return CodPendingResponse(source="unavailable")  # empty — never fabricate couriers/amounts
 
 
 async def _cod_pending_live(date_from: str | None, date_to: str | None) -> CodPendingResponse:

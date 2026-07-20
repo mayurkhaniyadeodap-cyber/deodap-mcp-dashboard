@@ -26,5 +26,5 @@ class SavingsResponse(BaseModel):
     sampled: int  # AWBs successfully priced
     skipped: int  # AWBs whose pricing call failed / had no serviceable rate
     total_saving: float  # sampled saving ONLY — not extrapolated to a monthly figure
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     note: str = "Theoretical maximum — ignores SLA, capacity and routing rules."

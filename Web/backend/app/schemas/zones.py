@@ -35,5 +35,5 @@ class ZonesResponse(BaseModel):
     unmapped: list[str] = []
     unmapped_count: int = 0
     # Additive provenance meta (drives the Live/Sample badge; flips on fallback).
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"

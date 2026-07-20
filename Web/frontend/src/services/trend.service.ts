@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type { RecoveryResponse, TrendResponse } from "@/types/api";
+import { pollWhileUnavailable } from "@/utils/source";
 
 /** GET /api/trend?from&to — daily orders/value + monthly per-courier billing (fast). */
 export function useTrend() {
@@ -9,6 +10,7 @@ export function useTrend() {
   return useQuery({
     queryKey: ["trend", from, to],
     queryFn: async () => (await api.get<TrendResponse>("/trend", { params: { from, to } })).data,
+    refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }
 

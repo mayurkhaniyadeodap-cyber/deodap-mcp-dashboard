@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type { ClaimableRateResponse, CourierBillingResponse, DashboardResponse } from "@/types/api";
+import { pollWhileUnavailable } from "@/utils/source";
 
 /** GET /api/dashboard?from&to — KPIs, courier billing, distribution, state cost (fast, ~6s). */
 export function useDashboard() {
@@ -9,6 +10,7 @@ export function useDashboard() {
   return useQuery({
     queryKey: ["dashboard", from, to],
     queryFn: async () => (await api.get<DashboardResponse>("/dashboard", { params: { from, to } })).data,
+    refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }
 
@@ -43,5 +45,6 @@ export function useDashboardCourierBilling() {
   return useQuery({
     queryKey: ["dashboard-courier-billing", from, to],
     queryFn: async () => (await api.get<CourierBillingResponse>("/dashboard/courier-billing", { params: { from, to } })).data,
+    refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }

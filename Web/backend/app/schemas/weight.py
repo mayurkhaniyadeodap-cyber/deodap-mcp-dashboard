@@ -51,6 +51,6 @@ class WeightResponse(BaseModel):
     missing_weight_count: int = 0
     missing_weight_pct: float = 0.0
     # Additive provenance meta (drives the Live/Sample badge; flips on fallback).
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     recon_date_field: str = "reconciliation_at"  # KPIs
     sample_date_field: str = "order_date"  # scatter + histogram

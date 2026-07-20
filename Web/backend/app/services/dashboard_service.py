@@ -88,7 +88,11 @@ def _delta_kpi(key: str, label: str, value: float, cur: float | None, prev: floa
 
 
 def _load_mock() -> DashboardResponse:
-    return DashboardResponse(**load_mock("dashboard.json"))
+    # Honest "unavailable" (empty) by default — NEVER fixture numbers. Fixtures only
+    # when USE_MOCK_FALLBACK is on (local dev).
+    if live_support.settings.use_mock_fallback:
+        return DashboardResponse(**load_mock("dashboard.json"))
+    return DashboardResponse(kpis=[], distribution=[], state_cost=[], source="unavailable")
 
 
 _RATE_LABEL = "Pending Reconciliation"
@@ -98,9 +102,14 @@ _RATE_SUB = "disputed invoiced − applied · pending reconciliation · lags"
 def _rate_diff_mock() -> RateDiffKpi:
     # date_field = reconciliation_at: this KPI's window filters on the reconciliation
     # date (not order_date), so the UI can label its basis correctly.
+    if live_support.settings.use_mock_fallback:
+        return RateDiffKpi(
+            kpi=_kpi("rate_diff", _RATE_LABEL, 2749841.0, "currency", _RATE_SUB),
+            source="mock", date_field="reconciliation_at",
+        )
     return RateDiffKpi(
-        kpi=_kpi("rate_diff", _RATE_LABEL, 2749841.0, "currency", _RATE_SUB),
-        source="mock", date_field="reconciliation_at",
+        kpi=_kpi("rate_diff", _RATE_LABEL, 0.0, "currency", None, unavailable=True),
+        source="unavailable", date_field="reconciliation_at",
     )
 
 
@@ -249,7 +258,9 @@ async def get_dashboard(date_from: str | None = None, date_to: str | None = None
 
 # --- Courier billing bar (sampled component breakdown) — separate endpoint ------
 def _billing_mock() -> CourierBillingResponse:
-    return CourierBillingResponse(**load_mock("courier_billing.json"))
+    if live_support.settings.use_mock_fallback:
+        return CourierBillingResponse(**load_mock("courier_billing.json"))
+    return CourierBillingResponse(rows=[], sample_size=0, total_matched=0, source="unavailable")
 
 
 async def _billing_live(date_from: str | None, date_to: str | None) -> CourierBillingResponse:

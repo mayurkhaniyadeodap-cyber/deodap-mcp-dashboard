@@ -645,7 +645,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default reconciliation_at
@@ -661,6 +661,11 @@ export interface components {
              * @default false
              */
             recalculating: boolean;
+            /**
+             * Maturing
+             * @default false
+             */
+            maturing: boolean;
         };
         /**
          * CodCourier
@@ -705,7 +710,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date
@@ -725,7 +730,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date
@@ -791,7 +796,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date
@@ -847,7 +852,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date
@@ -870,7 +875,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Recon Date Field
              * @default reconciliation_at
@@ -955,7 +960,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Computing
              * @default false
@@ -1056,7 +1061,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Computing
              * @default false
@@ -1083,7 +1088,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /** Mcp Tools */
             mcp_tools: string[];
             /** Load Ms */
@@ -1242,7 +1247,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default reconciliation_at
@@ -1303,7 +1308,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date
@@ -1338,7 +1343,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default reconciliation_at
@@ -1392,7 +1397,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Note
              * @default Theoretical maximum — ignores SLA, capacity and routing rules.
@@ -1501,7 +1506,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date
@@ -1653,7 +1658,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Recon Date Field
              * @default reconciliation_at
@@ -1709,7 +1714,7 @@ export interface components {
              * @default mock
              * @enum {string}
              */
-            source: "live" | "mock";
+            source: "live" | "mock" | "unavailable";
             /**
              * Date Field
              * @default order_date

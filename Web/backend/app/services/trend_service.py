@@ -20,7 +20,10 @@ _MAX_COURIERS = 8
 
 
 def _load_mock() -> TrendResponse:
-    return TrendResponse(**load_mock("trend.json"))
+    # Honest "unavailable" (empty) by default — fixtures only in dev (USE_MOCK_FALLBACK).
+    if live_support.settings.use_mock_fallback:
+        return TrendResponse(**load_mock("trend.json"))
+    return TrendResponse(daily=[], couriers=[], by_month=[], source="unavailable")
 
 
 async def _month_costs(label: str, ws: str, we: str, sem: asyncio.Semaphore) -> tuple[str, dict[str, float]] | None:

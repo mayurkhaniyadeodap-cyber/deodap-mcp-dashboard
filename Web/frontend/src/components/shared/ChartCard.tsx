@@ -2,6 +2,7 @@ import { BarChart3 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PanelUnavailable } from "@/components/shared/Unavailable";
 import { cn } from "@/lib/utils";
 
 interface ChartCardProps {
@@ -12,6 +13,10 @@ interface ChartCardProps {
   loading?: boolean;
   empty?: boolean;
   emptyMessage?: string;
+  /** Ship MCP unreachable → render the "unavailable" state instead of the chart. */
+  unavailable?: boolean;
+  onRetry?: () => void;
+  retrying?: boolean;
   /** Height of the plot area in px. */
   height?: number;
   /** The chart — typically a Recharts <ResponsiveContainer> at 100%×100%. */
@@ -30,6 +35,9 @@ export function ChartCard({
   loading = false,
   empty = false,
   emptyMessage = "No data for this range.",
+  unavailable = false,
+  onRetry,
+  retrying,
   height = 300,
   children,
   className,
@@ -47,6 +55,8 @@ export function ChartCard({
         <div style={{ height }} className="w-full">
           {loading ? (
             <Skeleton className="size-full" />
+          ) : unavailable ? (
+            <PanelUnavailable onRetry={onRetry} retrying={retrying} />
           ) : empty ? (
             <div className="flex size-full flex-col items-center justify-center text-center text-muted-foreground">
               <BarChart3 className="size-8 opacity-40" />

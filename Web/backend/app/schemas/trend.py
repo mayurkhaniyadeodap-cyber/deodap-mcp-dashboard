@@ -26,5 +26,5 @@ class TrendResponse(BaseModel):
     partial_months: list[str] = []
     # Human description of what the chart actually covers (esp. for short ranges).
     window: str = ""
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"

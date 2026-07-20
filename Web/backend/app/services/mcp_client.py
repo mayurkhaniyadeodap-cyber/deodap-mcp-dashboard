@@ -73,7 +73,13 @@ async def _execute(operation: Callable[[ClientSession], Awaitable[Any]]) -> Any:
 
     timeout = timedelta(seconds=settings.mcp_timeout_seconds)
     strategies = _strategies(url, timeout)
-    order = sorted(range(len(strategies)), key=lambda i: 0 if i == _preferred_index else 1)
+    # Once a transport is known good, try ONLY it — so a failed call fails FAST (one
+    # timeout ≈ mcp_timeout_seconds) into the "unavailable" state instead of hanging
+    # through every transport (N × timeout). Only the first-ever connect probes all.
+    if _preferred_index is not None:
+        order = [_preferred_index]
+    else:
+        order = list(range(len(strategies)))
 
     errors: list[str] = []
     for i in order:

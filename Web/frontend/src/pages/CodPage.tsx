@@ -8,6 +8,7 @@ import { PageError } from "@/components/shared/PageError";
 import { BillingTabs } from "@/components/shared/PageTabs";
 import { SearchInput } from "@/components/shared/SearchInput";
 import { SourceBadge } from "@/components/shared/SourceBadge";
+import { PanelUnavailable, UnavailableBanner } from "@/components/shared/Unavailable";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useTable } from "@/hooks/useTable";
@@ -18,6 +19,7 @@ import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
 import type { CodPendingCourier } from "@/types/api";
 import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber } from "@/utils/format";
 import { basisLabel } from "@/utils/provenance";
+import { badgeFromSource } from "@/utils/source";
 
 type Pending = CodPendingCourier & Record<string, unknown>;
 const naMoney = (v: number | null | undefined) =>
@@ -61,9 +63,10 @@ export default function CodPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   if (isError) return <PageError onRetry={() => refetch()} />;
 
-  // Provenance drives the badges and flips to Sample automatically on MCP fallback.
-  const badge = data?.source === "live" ? "live" : "sample";
-  const pendingBadge = pending.data ? (pending.data.source === "live" ? "live" : "sample") : undefined;
+  // Provenance drives the badges and flips to Unavailable/Sample on fallback.
+  const unavailable = data?.source === "unavailable";
+  const badge = badgeFromSource(data?.source);
+  const pendingBadge = badgeFromSource(pending.data?.source);
   const df = data?.date_field ?? "order_date";
   const { preset, from, to } = useDateRange();
   const weekly = data?.weekly ?? [];
@@ -76,11 +79,16 @@ export default function CodPage() {
   return (
     <div className="space-y-6">
       <BillingTabs />
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {isLoading || !data
           ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="h-[130px] animate-pulse" />)
+          : unavailable
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="h-[130px]"><PanelUnavailable onRetry={() => refetch()} /></Card>
+            ))
           : data.kpis.map((k) => (
               <KpiCard key={k.key} kpi={k} source={badge} basis={basisLabel(df, preset, from, to)} />
             ))}
@@ -92,6 +100,8 @@ export default function CodPage() {
           title="COD Collection vs Remittance"
           description={`Weekly · by ${df} · remittance lags a few days (recent weeks read low)`}
           loading={isLoading}
+          unavailable={unavailable}
+          onRetry={() => refetch()}
           height={320}
           action={<SourceBadge status={badge} />}
         >
@@ -99,7 +109,7 @@ export default function CodPage() {
             <BarChart data={weekly} margin={{ left: 8, right: 8, top: 8 }} barGap={4}>
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="week" stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} />
-              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={64} />
+              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
               <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="collected" name="COD Value (collected)" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} />
@@ -112,6 +122,8 @@ export default function CodPage() {
           title="COD Settlement Tracking"
           description="Outstanding remittance per courier · balances include unresolved settlement records, not confirmed receivables"
           loading={pending.isLoading}
+          unavailable={pending.data?.source === "unavailable"}
+          onRetry={() => pending.refetch()}
           height={320}
           action={<SourceBadge status={pendingBadge} />}
         >

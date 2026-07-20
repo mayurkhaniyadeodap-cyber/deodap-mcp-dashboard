@@ -70,7 +70,10 @@ def _canon_state(raw: object) -> str | None:
 
 
 def _load_mock() -> ZonesResponse:
-    return ZonesResponse(**load_mock("zones.json"))
+    # Honest "unavailable" (empty) by default — fixtures only in dev (USE_MOCK_FALLBACK).
+    if live_support.settings.use_mock_fallback:
+        return ZonesResponse(**load_mock("zones.json"))
+    return ZonesResponse(states=[], source="unavailable")
 
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> ZonesResponse:

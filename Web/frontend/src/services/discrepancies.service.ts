@@ -8,6 +8,7 @@ import type {
   ReconciliationResponse,
   SavingsResponse,
 } from "@/types/api";
+import { pollWhileUnavailable } from "@/utils/source";
 
 /**
  * GET /api/discrepancies/reconciliation?from&to — SLOW (reconciliation_disputes ×2
@@ -21,6 +22,7 @@ export function useReconciliation() {
     queryFn: async () =>
       (await api.get<ReconciliationResponse>("/discrepancies/reconciliation", { params: { from, to } })).data,
     staleTime: 60_000,
+    refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }
 

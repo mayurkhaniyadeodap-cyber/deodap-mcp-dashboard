@@ -4,12 +4,14 @@ import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { type Column, DataTable } from "@/components/shared/DataTable";
 import { PageError } from "@/components/shared/PageError";
 import { SourceBadge } from "@/components/shared/SourceBadge";
+import { PanelUnavailable, UnavailableBanner } from "@/components/shared/Unavailable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useZones } from "@/services/zones.service";
 import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
 import type { StateRow } from "@/types/api";
 import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber, formatPercent } from "@/utils/format";
+import { badgeFromSource } from "@/utils/source";
 
 const dash = <span className="text-muted-foreground">—</span>;
 
@@ -34,28 +36,33 @@ const HEAT_METRICS = [
 ] as const;
 
 export default function ZonesPage() {
-  const { data, isLoading, isError, refetch } = useZones();
+  const { data, isLoading, isError, isFetching, refetch } = useZones();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
-  const badge = data?.source === "live" ? "live" : "sample";
+  const unavailable = data?.source === "unavailable";
+  const badge = badgeFromSource(data?.source);
   const df = data?.date_field ?? "order_date";
   const states = data?.states ?? [];
   const topByCost = [...states].sort((a, b) => b.total_cost - a.total_cost).slice(0, 12);
 
   return (
     <div className="space-y-6">
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isFetching} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
           title="Shipping Cost by State"
           description={`Total courier cost per state · by ${df}`}
           loading={isLoading}
+          unavailable={unavailable}
+          onRetry={() => refetch()}
+          retrying={isFetching}
           action={<SourceBadge status={badge} />}
         >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={topByCost} margin={{ left: 8, right: 8 }}>
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="state" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={64} />
-              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={64} />
+              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
               <Tooltip cursor={{ fill: "#ffffff10" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Bar dataKey="total_cost" name="Total Cost" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -71,12 +78,24 @@ export default function ZonesPage() {
             <SourceBadge status={badge} />
           </CardHeader>
           <CardContent className="flex-1 overflow-x-auto">
-            {isLoading ? <Skeleton className="h-[280px] w-full" /> : <Heatmap states={topByCost} />}
+            {isLoading ? (
+              <Skeleton className="h-[280px] w-full" />
+            ) : unavailable ? (
+              <PanelUnavailable onRetry={() => refetch()} retrying={isFetching} className="min-h-[280px]" />
+            ) : (
+              <Heatmap states={topByCost} />
+            )}
           </CardContent>
         </Card>
       </div>
 
-      <DataTable columns={COLUMNS} data={states} getRowId={(s) => s.state} loading={isLoading} emptyTitle="No states" emptyMessage="No state data for this range." />
+      {unavailable ? (
+        <Card>
+          <PanelUnavailable onRetry={() => refetch()} retrying={isFetching} className="py-12" />
+        </Card>
+      ) : (
+        <DataTable columns={COLUMNS} data={states} getRowId={(s) => s.state} loading={isLoading} emptyTitle="No states" emptyMessage="No state data for this range." />
+      )}
 
       {data && (data.unmapped_count > 0 || data.unjoined.length > 0) && (
         <p className="text-xs text-muted-foreground">

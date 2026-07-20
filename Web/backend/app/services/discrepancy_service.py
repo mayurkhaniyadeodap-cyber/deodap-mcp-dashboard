@@ -37,7 +37,14 @@ _cache = live_support.new_cache()
 
 
 def _load_mock() -> DiscrepancyResponse:
-    return DiscrepancyResponse(**load_mock("discrepancies.json"))
+    # Honest "unavailable" (empty) by default — fixtures only in dev (USE_MOCK_FALLBACK).
+    if settings.use_mock_fallback:
+        return DiscrepancyResponse(**load_mock("discrepancies.json"))
+    return DiscrepancyResponse(
+        rate_diff=RateDiff(reconciliation_lines=0, weight_overcharged=0, weight_diff_kg=0.0,
+                           fwd_rate_diff=0.0, reconciled=0, disputed=0, has_recon=False),
+        rto=[], ndr=[], ndr_orders=0, ndr_avg_attempts=0.0, source="unavailable",
+    )
 
 
 def _per_courier(orders_by_slug: dict[str, int], counts_by_slug: dict[str, int]) -> list[CourierRate]:
@@ -117,7 +124,7 @@ _DISPUTE_LIMIT = 100  # top-N by magnitude (there are tens of thousands)
 
 def _reconciliation_mock() -> ReconciliationResponse:
     # Empty on fallback — never fabricate AWBs / couriers / amounts.
-    return ReconciliationResponse(source="mock")
+    return ReconciliationResponse(source="unavailable")
 
 
 async def _reconciliation_live(date_from: str | None, date_to: str | None) -> ReconciliationResponse:
@@ -202,7 +209,8 @@ _claimable_inflight: set[tuple] = set()        # windows currently being compute
 # Only ONE enumeration at a time — caps total claimable-driven MCP load at
 # _CLAIMABLE_CONCURRENCY (4), same as today's inline behaviour, so a background
 # refresh can never monopolise the (session-per-request) MCP client.
-_claimable_job_sem = asyncio.Semaphore(1)
+# Heavy enumerations share ONE global cap (live_support.background_job_sem) so
+# claimable / dispute-lines / recovery can't run concurrently and saturate the MCP.
 _bg_tasks: set[asyncio.Task] = set()  # keep fire-and-forget refresh tasks referenced
 
 
@@ -279,7 +287,7 @@ async def _refresh_claimable(key: tuple) -> None:
     async with _claimable_inflight_guard(key) as acquired:
         if not acquired:  # another refresh for this window is already running
             return
-        async with _claimable_job_sem:  # one heavy enumeration at a time
+        async with live_support.background_job_sem:  # one heavy enumeration at a time (global)
             try:
                 resp = await _claimable_live(*key)
                 _claimable_warm[key] = (time.monotonic(), resp)
@@ -306,6 +314,20 @@ class _claimable_inflight_guard:
     async def __aexit__(self, *exc) -> None:
         if self.acquired:
             _claimable_inflight.discard(self.key)
+
+
+# Reconciliation lags ~2 weeks (by reconciliation_at). A window whose END is within
+# that lag is still reconciling → its claimable figure is real but low (most lines
+# not yet reconciled), so the UI shows a maturity note instead of a bare ₹0.
+_RECON_LAG_DAYS = 14
+
+
+def _window_maturing(date_to: str | None) -> bool:
+    try:
+        end = date.fromisoformat(date_to) if date_to else date.today()
+    except ValueError:
+        end = date.today()
+    return end > date.today() - timedelta(days=_RECON_LAG_DAYS)
 
 
 def _spawn_refresh(key: tuple) -> None:
@@ -342,8 +364,9 @@ async def get_claimable_rate(
                                               figure (flag recalculating) + queue this
                                               window; if nothing warm at all → computing.
     """
+    mat = _window_maturing(date_to)  # is the requested window still reconciling?
     if not settings.mcp_connect_url:
-        return ClaimableRateResponse(source="mock")
+        return ClaimableRateResponse(source="mock", maturing=mat)
 
     global _claimable_primary_key
     key = (date_from, date_to)
@@ -354,9 +377,9 @@ async def get_claimable_rate(
     if hit is not None:
         ts, resp = hit
         if (now - ts) < _CLAIMABLE_TTL_SECONDS:
-            return resp
+            return resp.model_copy(update={"maturing": mat})
         _spawn_refresh(key)  # stale → refresh in background, serve the warm figure now
-        return resp.model_copy(update={"recalculating": True})
+        return resp.model_copy(update={"recalculating": True, "maturing": mat})
 
     # Nothing for this window yet — never block. Compute it in the background and
     # meanwhile serve the last good figure from any warm window (flagged), or a
@@ -364,8 +387,8 @@ async def get_claimable_rate(
     _spawn_refresh(key)
     fallback = _claimable_warm.get((None, None)) or next(iter(_claimable_warm.values()), None)
     if fallback is not None:
-        return fallback[1].model_copy(update={"recalculating": True})
-    return ClaimableRateResponse(source="mock", computing=True)
+        return fallback[1].model_copy(update={"recalculating": True, "maturing": mat})
+    return ClaimableRateResponse(source="mock", computing=True, maturing=mat)
 
 
 # --- Dispute Lines (Task P3) — the per-AWB list ops files with carriers ---------
@@ -378,25 +401,27 @@ _LINES_MIN_DIFF_DEFAULT = 50.0
 _LINES_PAGE_DEFAULT = 50
 _LINES_TTL_SECONDS = 1800  # 30 min
 # The page's DEFAULT view — pre-warmed on a schedule so opening it is instant.
-# ₹100 floor (only material claims) on a MATURED window (ends ~2 weeks back so
-# reconciliation has settled — no immature rows in a list you file with carriers).
+# ₹100 floor (only material claims) on the LAST FULL CALENDAR MONTH (matured +
+# STABLE — see matured_window). A stable window is essential: the scheduler
+# pre-warms a fixed window, so a window that shifted daily would be cold every
+# morning. This one only rolls at a month boundary.
 _LINES_DEFAULT_MIN_DIFF = 100.0
-_LINES_MATURED_LAG_DAYS = 14
-_LINES_MATURED_SPAN_DAYS = 30
 _lines_cache: dict[tuple, tuple[float, "_LinesData"]] = {}
 _lines_inflight: set[tuple] = set()
-_lines_job_sem = asyncio.Semaphore(1)
 _lines_primary_key: tuple = (None, None, _LINES_MIN_DIFF_DEFAULT)
 
 
 def matured_window() -> tuple[str, str]:
-    """The default dispute window: a 30-day span ending ~2 weeks ago, so its
-    reconciliation has matured. Recomputed each call (shifts by day). The FRONTEND
-    computes the same window for its default view, so its request hits the
-    pre-warmed cache exactly."""
-    to = date.today() - timedelta(days=_LINES_MATURED_LAG_DAYS)
-    frm = to - timedelta(days=_LINES_MATURED_SPAN_DAYS - 1)
-    return frm.isoformat(), to.isoformat()
+    """The default dispute/reconciliation window: the LAST FULL CALENDAR MONTH.
+    STABLE — only changes at a month boundary, so the scheduler's pre-warm stays
+    valid all day (a rolling window would be cold every morning). MATURED — a
+    completed period whose reconciliation has settled. The FRONTEND computes the
+    SAME window (identical formula), so its default request hits the pre-warm
+    exactly. Single source of truth for 'the default range'."""
+    first_of_this_month = date.today().replace(day=1)
+    last_of_prev = first_of_this_month - timedelta(days=1)   # last day of previous month
+    first_of_prev = last_of_prev.replace(day=1)              # first day of previous month
+    return first_of_prev.isoformat(), last_of_prev.isoformat()
 
 
 def _default_lines_keys() -> list[tuple]:
@@ -501,7 +526,7 @@ async def _refresh_lines(key: tuple) -> None:
     async with _lines_inflight_guard(key) as acquired:
         if not acquired:
             return
-        async with _lines_job_sem:
+        async with live_support.background_job_sem:  # global cap (shared with claimable/recovery)
             try:
                 data = await _build_lines(*key)
                 _lines_cache[key] = (time.monotonic(), data)

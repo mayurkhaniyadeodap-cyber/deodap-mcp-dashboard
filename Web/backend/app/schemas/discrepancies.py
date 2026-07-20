@@ -41,6 +41,6 @@ class DiscrepancyResponse(BaseModel):
     ndr_orders: int  # canonical NDR count = ndr_analysis.ndr_orders
     ndr_avg_attempts: float
     # Additive provenance meta (drives the Live/Sample badge; flips on fallback).
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     recon_date_field: str = "reconciliation_at"  # rate_diff
     order_date_field: str = "order_date"  # rto / ndr

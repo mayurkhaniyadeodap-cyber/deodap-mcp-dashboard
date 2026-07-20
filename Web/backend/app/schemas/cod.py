@@ -36,7 +36,7 @@ class CodResponse(BaseModel):
     weekly: list[CodWeekly]
     # --- Additive provenance meta (drives the Live/Sample badge; flips to
     # "mock" whenever the live fetch fails or the MCP token is blank). ---
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"
 
 
@@ -54,5 +54,5 @@ class CodPendingCourier(BaseModel):
 
 class CodPendingResponse(BaseModel):
     rows: list[CodPendingCourier] = []
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"

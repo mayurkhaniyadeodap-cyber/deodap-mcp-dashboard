@@ -39,7 +39,7 @@ class DisputeLinesResponse(BaseModel):
     min_diff: float = 50.0
     sort_by: str = "rate_diff"
     date_field: str = "reconciliation_at"
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     # Warm-cache state (the enumeration runs off the request path, like claimable).
     computing: bool = False
     recalculating: bool = False
@@ -69,6 +69,6 @@ class DisputeInvoicesResponse(BaseModel):
     page_size: int = 25
     min_diff: float = 50.0
     date_field: str = "reconciliation_at"
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     computing: bool = False
     recalculating: bool = False

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 class EndpointStatus(BaseModel):
     endpoint: str
-    source: Literal["live", "mock"]
+    source: Literal["live", "mock", "unavailable"]
     mcp_tools: list[str]  # the MCP tools this endpoint ACTUALLY calls
     load_ms: int  # wall-clock for this probe (its own + shared caches apply)
     notes: str

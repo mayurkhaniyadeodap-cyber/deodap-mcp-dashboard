@@ -10,6 +10,14 @@ import type { SourceStatus } from "@/services/meta.service";
  */
 export function SourceBadge({ status, className }: { status?: SourceStatus; className?: string }) {
   if (!status) return null;
+  if (status === "unavailable") {
+    return (
+      <Badge variant="warning" className={cn("gap-1.5", className)} title="Live data unavailable — Ship MCP unreachable">
+        <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+        Unavailable
+      </Badge>
+    );
+  }
   const live = status === "live";
   return (
     <Badge

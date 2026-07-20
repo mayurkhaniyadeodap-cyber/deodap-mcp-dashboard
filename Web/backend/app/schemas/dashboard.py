@@ -41,7 +41,7 @@ class DashboardResponse(BaseModel):
     kpis: list[Kpi]
     distribution: list[DistributionSlice]
     state_cost: list[StateCostRow]
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"
 
 
@@ -65,7 +65,7 @@ class CourierBillingResponse(BaseModel):
     sample_size: int  # orders with a rate_summary.forward block
     total_matched: int
     is_full: bool = False  # True → sampled the whole population ("all N")
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"
 
 
@@ -74,5 +74,5 @@ class RateDiffKpi(BaseModel):
     it is fetched separately from the main dashboard)."""
 
     kpi: Kpi
-    source: Literal["live", "mock"] = "mock"
+    source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "reconciliation_at"

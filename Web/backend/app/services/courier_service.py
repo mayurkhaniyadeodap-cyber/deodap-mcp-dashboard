@@ -193,19 +193,22 @@ async def list_couriers(
         return cached[1]
 
     if not settings.mcp_connect_url:
-        logger.warning("MCP not configured (blank MCP_URL/MCP_TOKEN) — using mock couriers")
-        return _load_mock_couriers()
+        logger.error("Couriers: MCP not configured — returning empty (no fixtures).")
+        return _load_mock_couriers() if settings.use_mock_fallback else []
 
     try:
         couriers = await _fetch_live(date_from, date_to)
         # An EMPTY result is a valid live answer (the selected window has no orders —
         # e.g. "Today" before the day's data lands). Return it as-is so the charts
         # stay consistent with the KPI cards (both show "no data"). Only a genuine
-        # MCP failure (exception below) falls back to mock — never an empty window,
-        # which previously surfaced phantom mock data under a LIVE badge.
+        # MCP failure (exception below) degrades — to an EMPTY list, never fixtures.
         _cache[key] = (now, couriers)
         logger.info("Loaded %d couriers from live MCP (from=%s to=%s)", len(couriers), date_from, date_to)
         return couriers
-    except Exception as exc:  # noqa: BLE001 — never break the app in dev
-        logger.warning("Live MCP courier fetch failed (%s) — falling back to mock", exc)
+    except Exception as exc:  # noqa: BLE001 — never break the app
+        # Never fixtures — an empty list (no fake ₹). Fixtures only in dev (flag).
+        logger.error("Couriers: live MCP fetch failed — returning empty (no fixtures). Cause: %r", exc)
+        if settings.use_mock_fallback:
+            return _load_mock_couriers()
+        return []
         return _load_mock_couriers()

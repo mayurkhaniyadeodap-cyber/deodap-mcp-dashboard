@@ -18,6 +18,7 @@ import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { CourierBillsTable } from "@/components/shared/CourierBillsTable";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { SourceBadge } from "@/components/shared/SourceBadge";
+import { PanelUnavailable, UnavailableBanner } from "@/components/shared/Unavailable";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courierStyle } from "@/config/couriers";
@@ -28,6 +29,7 @@ import { useDateRange } from "@/store/dateRange.store";
 import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
 import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber } from "@/utils/format";
 import { basisLabel } from "@/utils/provenance";
+import { badgeFromSource } from "@/utils/source";
 
 // Population per-courier cost — Forward + RTO, BOTH from shipping_cost_summary
 // (group_by=courier), so they share the same population and the same scale.
@@ -65,7 +67,8 @@ export default function DashboardPage() {
     );
   }
 
-  const badge = data?.source === "live" ? "live" : "sample";
+  const unavailable = data?.source === "unavailable";
+  const badge = badgeFromSource(data?.source);
 
   // Provenance basis line for every KPI: "<date_field> · <window>" (always shown so
   // the active window is unmissable).
@@ -95,11 +98,16 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
       {/* KPI row — 4 fast KPIs + 2 slow KPIs (Claimable Rate Difference, Savings) each
           fetched from its own endpoint with its own skeleton. */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading || !data
           ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="h-[150px] animate-pulse" />)
+          : unavailable
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="h-[150px]"><PanelUnavailable onRetry={() => refetch()} /></Card>
+            ))
           : data.kpis.map((kpi) => (
               <KpiCard key={kpi.key} kpi={kpi} source={badge} basis={basisLine(data.date_field)} />
             ))}
@@ -134,6 +142,9 @@ export default function DashboardPage() {
               // — a genuinely computed value, not "unavailable".
               unavailable: false,
               subtitle:
+                (claimable.data.maturing
+                  ? "This window is still reconciling — most lines aren't reconciled yet, so this is a floor, not the final figure. "
+                  : "") +
                 (claimable.data.recalculating ? "Recalculating for this range — showing last computed figure. " : "") +
                 `${claimable.data.count.toLocaleString("en-IN")} priced rows ≥ ₹${claimable.data.threshold}. ` +
                 `Excluded — unpriced (no applied rate) ${formatCurrencyINRCompact(claimable.data.excluded_no_applied_rate)}` +
@@ -171,6 +182,8 @@ export default function DashboardPage() {
           title="Courier-wise Cost"
           description="Population cost per courier · Forward + RTO · shipping_cost_summary (same scale)"
           loading={couriers.isLoading}
+          unavailable={unavailable}
+          onRetry={() => refetch()}
           className="lg:col-span-2"
           height={400}
           action={<SourceBadge status={badge} />}
@@ -179,7 +192,7 @@ export default function DashboardPage() {
             <BarChart data={courierCost} margin={{ left: 8, right: 8, top: 8 }}>
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="name" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={56} />
-              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={60} />
+              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
               <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 12 }} />
               {COST_SERIES.map((s, i) => (
@@ -189,7 +202,7 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Shipment Distribution" description="Share of orders by courier" loading={isLoading} height={400} action={<SourceBadge status={badge} />}>
+        <ChartCard title="Shipment Distribution" description="Share of orders by courier" loading={isLoading} unavailable={unavailable} onRetry={() => refetch()} height={400} action={<SourceBadge status={badge} />}>
           {/* Legend removed — the donut fills the whole card and stays centered. */}
           <div className="flex h-full items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
@@ -222,8 +235,10 @@ export default function DashboardPage() {
               : "Sampled forward cost components per courier"
           }
           loading={false}
+          unavailable={billing.data?.source === "unavailable"}
+          onRetry={() => billing.refetch()}
           height={400}
-          action={<SourceBadge status={billing.data?.source === "live" ? "live" : "sample"} />}
+          action={<SourceBadge status={badgeFromSource(billing.data?.source)} />}
         >
           {billing.isLoading ? (
             <div className="flex h-full flex-col justify-end gap-2 px-2 pb-6">
@@ -235,7 +250,7 @@ export default function DashboardPage() {
               <BarChart data={billing.data?.rows ?? []} margin={{ left: 8, right: 8, top: 8 }}>
                 <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
                 <XAxis dataKey="courier" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={56} />
-                <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={60} />
+                <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
                 <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
                 <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 12 }} />
                 {BREAKDOWN_SEGMENTS.map((s, i) => (
@@ -252,6 +267,8 @@ export default function DashboardPage() {
           title={`Top ${data?.state_cost?.length ?? 0} States`}
           description="States ranked by courier cost"
           loading={isLoading}
+          unavailable={unavailable}
+          onRetry={() => refetch()}
           height={400}
           action={<SourceBadge status={badge} />}
         >
@@ -259,7 +276,7 @@ export default function DashboardPage() {
             <BarChart data={data?.state_cost ?? []} margin={{ left: 8, right: 8, top: 24 }}>
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="state" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={60} />
-              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={64} />
+              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
               <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Bar dataKey="total_cost" name="Total Cost" fill={CHART_COLORS.cyan} radius={[4, 4, 0, 0]}>
                 <LabelList

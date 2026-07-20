@@ -30,12 +30,13 @@ _recovery_primary_key: tuple = (None, None)  # window the scheduler keeps hot (l
 _recovery_inflight: set[tuple] = set()        # windows currently being computed (dedupe)
 # One enumeration at a time; each is internally capped at 3 concurrent month calls,
 # so recovery can never monopolise the (session-per-request) MCP client.
-_recovery_job_sem = asyncio.Semaphore(1)
+# Recovery shares the global background-job cap (live_support.background_job_sem)
+# with claimable/dispute-lines so the schedulers can't run concurrently.
 _bg_tasks: set[asyncio.Task] = set()  # keep fire-and-forget refresh tasks referenced
 
 
 def _mock() -> RecoveryResponse:
-    return RecoveryResponse(points=[], source="mock")
+    return RecoveryResponse(points=[], source="unavailable")
 
 
 async def _month_diff(ws: str, we: str, sem: asyncio.Semaphore) -> float | None:
@@ -96,7 +97,7 @@ async def _refresh_recovery(key: tuple) -> None:
     async with _recovery_inflight_guard(key) as acquired:
         if not acquired:  # another refresh for this window is already running
             return
-        async with _recovery_job_sem:  # one heavy 7× enumeration at a time
+        async with live_support.background_job_sem:  # one heavy enumeration at a time (global)
             try:
                 series = await _fetch_live(*key)
                 _recovery_warm[key] = (time.monotonic(), series)

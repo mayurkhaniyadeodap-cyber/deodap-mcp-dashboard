@@ -7,9 +7,11 @@ import { Card } from "@/components/ui/card";
 import { useTable } from "@/hooks/useTable";
 import { useCouriers } from "@/services/couriers.service";
 import { useReconciliation } from "@/services/discrepancies.service";
-import { useSourceMeta } from "@/services/meta.service";
+import { type SourceStatus, useSourceMeta } from "@/services/meta.service";
+import { UnavailableBanner } from "@/components/shared/Unavailable";
 import type { Courier, RateDispute, ReconciledCourier, WeightDispute } from "@/types/api";
 import { formatCurrencyINR, formatNumber, formatPercent } from "@/utils/format";
+import { badgeFromSource } from "@/utils/source";
 
 const money = (v: number) => <span className="tabular-nums">{formatCurrencyINR(v)}</span>;
 const awbCell = (v: string) => <span className="font-mono text-xs">{v}</span>;
@@ -56,7 +58,8 @@ export default function DiscrepanciesPage() {
   const recon = useReconciliation();
   const couriers = useCouriers();
   const comparisonSrc = useSourceMeta().data?.couriers?.comparison;
-  const reconSrc = recon.data ? (recon.data.source === "live" ? "live" : "sample") : undefined;
+  const reconSrc = badgeFromSource(recon.data?.source);
+  const reconUnavailable = recon.data?.source === "unavailable";
 
   // Section datasets (live). Each table keeps its own search / sort / pagination.
   const weight = useTable<W>({ data: (recon.data?.weight_disputes ?? []) as W[], searchKeys: ["awb", "courier"], initialSort: { key: "weight_diff_kg", dir: "desc" }, pageSize: 10 });
@@ -73,6 +76,7 @@ export default function DiscrepanciesPage() {
   return (
     <div className="space-y-6">
       <BillingTabs />
+      <UnavailableBanner show={reconUnavailable} onRetry={() => recon.refetch()} retrying={recon.isFetching} />
 
       {/* 1. Weight Discrepancies — reconciliation_disputes (weight_status=Mismatched) */}
       <Section
@@ -128,7 +132,7 @@ function Section({
 }: {
   title: string;
   subtitle?: string;
-  badge?: "live" | "sample";
+  badge?: SourceStatus;
   search?: { search: string; setSearch: (v: string) => void };
   searchPlaceholder?: string;
   children: React.ReactNode;

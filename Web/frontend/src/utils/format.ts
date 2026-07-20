@@ -16,14 +16,13 @@ export function formatCurrencyINR(value: number): string {
   return inrFormatter.format(value);
 }
 
-/** ₹1.2L / ₹3.4Cr — compact Indian units for KPI tiles and axes. */
+/**
+ * FULL Indian-format currency — no Cr/L/K abbreviations (e.g. ₹1,39,00,000).
+ * Kept as an alias of formatCurrencyINR so every existing call site (KPI cards,
+ * chart axes, tables, tooltips) shows full amounts consistently.
+ */
 export function formatCurrencyINRCompact(value: number): string {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  if (abs >= 1_00_00_000) return `${sign}₹${(abs / 1_00_00_000).toFixed(2)}Cr`;
-  if (abs >= 1_00_000) return `${sign}₹${(abs / 1_00_000).toFixed(2)}L`;
-  if (abs >= 1_000) return `${sign}₹${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}₹${abs}`;
+  return formatCurrencyINR(value);
 }
 
 /** 12,34,567 — plain number with Indian grouping. */
@@ -31,14 +30,9 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value);
 }
 
-/** 1.2K / 3.4M-style compact integer for tiles. */
+/** FULL Indian-format integer — no Cr/L/K abbreviations (alias of formatNumber). */
 export function formatNumberCompact(value: number): string {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  if (abs >= 1_00_00_000) return `${sign}${(abs / 1_00_00_000).toFixed(2)}Cr`;
-  if (abs >= 1_00_000) return `${sign}${(abs / 1_00_000).toFixed(2)}L`;
-  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}${abs}`;
+  return formatNumber(value);
 }
 
 export function formatPercent(value: number, fractionDigits = 1): string {

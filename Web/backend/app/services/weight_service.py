@@ -34,7 +34,7 @@ def _empty_fallback() -> WeightResponse:
             reconciliation_lines=0, weight_overcharged=0, weight_diff_kg=0.0,
             fwd_rate_diff=0.0, reconciled=0, disputed=0, has_recon=False,
         ),
-        source="mock",
+        source="unavailable",
     )
 
 

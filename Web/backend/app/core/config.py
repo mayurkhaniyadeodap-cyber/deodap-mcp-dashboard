@@ -5,12 +5,32 @@ middleware import `settings` from here — never os.environ directly.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The insecure dev fallback secret. Production must override JWT_SECRET; the app
 # refuses to boot in production while jwt_secret still equals this (see main.py).
 DEV_JWT_SECRET = "dev-secret-change-me-please-32chars-min"
+
+
+def _default_database_url() -> str:
+    """A STABLE, absolute SQLite path — never relative to the process CWD, so the
+    SAME database is used no matter where the backend is launched from (the old
+    `sqlite:///./deodap.db` opened a different, empty file per working directory,
+    which is why added employees vanished after a restart).
+
+    - Production container: the persistent volume is mounted at `/data`
+      (docker-compose `dashboard-data:/data`), so the DB lives there and survives
+      restarts/redeploys.
+    - Otherwise (local dev): anchor the file to the backend package root.
+    DATABASE_URL in the env always overrides this.
+    """
+    data_dir = Path("/data")
+    if data_dir.is_dir():
+        return f"sqlite:///{(data_dir / 'deodap.db').as_posix()}"
+    backend_root = Path(__file__).resolve().parents[2]  # …/app/core/config.py → backend/
+    return f"sqlite:///{(backend_root / 'deodap.db').as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -41,9 +61,10 @@ class Settings(BaseSettings):
     admin_password: str = ""
 
     # --- Database ---
-    # Users are stored here (SQLAlchemy User model). SQLite file by default; point
-    # DATABASE_URL at Postgres/etc. in production if desired.
-    database_url: str = "sqlite:///./deodap.db"
+    # Users are stored here (SQLAlchemy User model). Absolute, CWD-independent
+    # SQLite path by default (see _default_database_url); point DATABASE_URL at the
+    # persistent volume (sqlite:////data/deodap.db) or Postgres/etc. in production.
+    database_url: str = _default_database_url()
 
     # --- CORS ---
     # Comma-separated in the env; parsed into a list below.
@@ -54,7 +75,13 @@ class Settings(BaseSettings):
     # NOT a Bearer header. Blank token => services fall back to mock data.
     mcp_url: str = ""
     mcp_token: str = ""
-    mcp_timeout_seconds: float = 30.0
+    # Fail FAST into the "data unavailable" state instead of hanging a page for a
+    # minute when the MCP is unreachable (was 30s → ~60s across retried transports).
+    mcp_timeout_seconds: float = 12.0
+    # When the live MCP call fails we serve an honest "unavailable" state (empty
+    # data, source="unavailable") — NEVER fixture numbers. This flag lets local dev
+    # opt back into the mock fixtures; it must stay false in production.
+    use_mock_fallback: bool = False
     # Expose the /_mcp/tools and /_mcp/probe inspection endpoints (an MCP tool-call
     # proxy — never ship to production). Off by default; set ENABLE_MCP_DEBUG=true
     # only for local dev.
