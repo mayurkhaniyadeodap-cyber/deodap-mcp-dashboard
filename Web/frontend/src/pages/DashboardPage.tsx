@@ -130,6 +130,9 @@ export default function DashboardPage() {
               delta: 0,
               delta_tone: "neutral",
               has_delta: false,
+              // Claimable keeps its explanatory ₹0 (subtitle spells out "0 priced rows")
+              // — a genuinely computed value, not "unavailable".
+              unavailable: false,
               subtitle:
                 (claimable.data.recalculating ? "Recalculating for this range — showing last computed figure. " : "") +
                 `${claimable.data.count.toLocaleString("en-IN")} priced rows ≥ ₹${claimable.data.threshold}. ` +
@@ -153,6 +156,7 @@ export default function DashboardPage() {
               delta: 0,
               delta_tone: "neutral",
               has_delta: false,
+              unavailable: false,
               subtitle: `applied vs cheapest serviceable · sampled ${savings.data.sampled} AWBs`,
             }}
             source={savings.data.source === "live" ? "live" : "sample"}

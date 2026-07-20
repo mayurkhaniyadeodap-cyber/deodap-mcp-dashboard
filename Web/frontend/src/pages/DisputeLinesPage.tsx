@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Download, FileSpreadsheet, FileText } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { type Column, DataTable } from "@/components/shared/DataTable";
 import { Pagination } from "@/components/shared/Pagination";
 import { SearchInput } from "@/components/shared/SearchInput";
@@ -25,6 +25,19 @@ import { formatCurrencyINR, formatNumber } from "@/utils/format";
 const LINE_PAGE_SIZE = 50;
 const INVOICE_PAGE_SIZE = 25;
 const MIN_DIFF_OPTIONS = [10, 50, 100] as const;
+
+// The dispute list uses its OWN matured window (30 days ending ~2 weeks ago) so its
+// reconciliation has settled — no immature rows in a list you file. Must match the
+// backend's matured_window() so the default request hits the pre-warmed cache.
+function maturedWindow(): { from: string; to: string } {
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const to = new Date();
+  to.setDate(to.getDate() - 14);
+  const from = new Date(to);
+  from.setDate(to.getDate() - 29);
+  return { from: fmt(from), to: fmt(to) };
+}
 
 type Row = DisputeLine & Record<string, unknown>;
 const kg = (v: number) => <span className="tabular-nums">{v.toFixed(2)} kg</span>;
@@ -105,8 +118,9 @@ function InvoiceCard({ g, base }: { g: DisputeInvoiceGroup; base: DisputeLineFil
 }
 
 export default function DisputeLinesPage() {
+  const win = useMemo(() => maturedWindow(), []); // matured default window (pre-warmed)
   const [view, setView] = useState<"invoices" | "lines">("invoices");
-  const [minDiff, setMinDiff] = useState<number>(50);
+  const [minDiff, setMinDiff] = useState<number>(100); // ₹100 default (only material claims)
   const [sortBy, setSortBy] = useState<"rate_diff" | "weight_diff">("rate_diff");
   const [courier, setCourier] = useState<string>("");
   const [invoiceNo, setInvoiceNo] = useState<string>("");
@@ -114,12 +128,13 @@ export default function DisputeLinesPage() {
   const debouncedInvoice = useDebounce(invoiceNo, 300);
 
   const filters: DisputeLineFilters = {
+    from: win.from, to: win.to,
     minDiff, sortBy, courier: courier || null, invoiceNo: debouncedInvoice, page, pageSize: LINE_PAGE_SIZE,
   };
 
   const grouped = view === "invoices";
   const invoicesQ = useDisputeInvoices(
-    { minDiff, courier: courier || null, invoiceNo: debouncedInvoice, page, pageSize: INVOICE_PAGE_SIZE },
+    { from: win.from, to: win.to, minDiff, courier: courier || null, invoiceNo: debouncedInvoice, page, pageSize: INVOICE_PAGE_SIZE },
     { enabled: grouped },
   );
   const linesQ = useDisputeLines({ ...filters }, { enabled: !grouped });
@@ -181,6 +196,7 @@ export default function DisputeLinesPage() {
               </p>
             )}
             <p className="mt-1 text-[12px] text-muted-foreground">
+              Window: {win.from} → {win.to} · matured (reconciliation settled ~2 weeks back, so nothing immature is filed).
               Filtered on reconciliation date. Each line is a billing line (forward or RTO leg) — AWBs are effectively
               unique, so lines are not deduped. Per-line reconciliation date isn't exposed by the MCP.
             </p>

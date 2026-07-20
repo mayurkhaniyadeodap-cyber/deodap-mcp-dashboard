@@ -48,6 +48,8 @@ const KPI_META: Record<string, { accent: Accent; icon: LucideIcon }> = {
 };
 
 function formatValue(kpi: Kpi): string {
+  // No data in the selected window → "N/A" (never a misleading ₹0/0).
+  if (kpi.unavailable) return "N/A";
   switch (kpi.format) {
     case "currency":
       return formatCurrencyINRCompact(kpi.value);
@@ -116,7 +118,7 @@ export function KpiCard({ kpi, accent: accentProp, icon: iconProp, source, basis
         </div>
       </div>
 
-      <div className="mt-3 text-[36px] font-extrabold leading-none tracking-tight">
+      <div className={cn("mt-3 text-[36px] font-extrabold leading-none tracking-tight", kpi.unavailable && "text-muted-foreground")}>
         {formatValue(kpi)}
       </div>
 

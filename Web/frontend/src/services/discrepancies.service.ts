@@ -34,6 +34,8 @@ export function useDiscrepancies() {
 }
 
 export interface DisputeLineFilters {
+  from: string; // the dispute list uses its OWN window (default: matured), not the global picker
+  to: string;
   minDiff: number;
   sortBy: "rate_diff" | "weight_diff";
   courier: string | null; // display name (empty/null = all)
@@ -48,14 +50,13 @@ export interface DisputeLineFilters {
  * server-side. Polls while the first enumeration is still computing.
  */
 export function useDisputeLines(f: DisputeLineFilters, opts?: { enabled?: boolean }) {
-  const { from, to } = useDateRange();
   return useQuery({
-    queryKey: ["dispute-lines", from, to, f.minDiff, f.sortBy, f.courier, f.invoiceNo, f.page, f.pageSize],
+    queryKey: ["dispute-lines", f.from, f.to, f.minDiff, f.sortBy, f.courier, f.invoiceNo, f.page, f.pageSize],
     queryFn: async () =>
       (
         await api.get<DisputeLinesResponse>("/disputes/lines", {
           params: {
-            from, to,
+            from: f.from, to: f.to,
             min_diff: f.minDiff,
             sort_by: f.sortBy,
             courier_slug: f.courier || undefined,
@@ -80,17 +81,16 @@ export function useDisputeLines(f: DisputeLineFilters, opts?: { enabled?: boolea
  * bundled by carrier invoice; totals reconcile exactly with the claimable KPI.
  */
 export function useDisputeInvoices(
-  f: Pick<DisputeLineFilters, "minDiff" | "courier" | "invoiceNo" | "page" | "pageSize">,
+  f: Pick<DisputeLineFilters, "from" | "to" | "minDiff" | "courier" | "invoiceNo" | "page" | "pageSize">,
   opts?: { enabled?: boolean },
 ) {
-  const { from, to } = useDateRange();
   return useQuery({
-    queryKey: ["dispute-invoices", from, to, f.minDiff, f.courier, f.invoiceNo, f.page, f.pageSize],
+    queryKey: ["dispute-invoices", f.from, f.to, f.minDiff, f.courier, f.invoiceNo, f.page, f.pageSize],
     queryFn: async () =>
       (
         await api.get<DisputeInvoicesResponse>("/disputes/invoices", {
           params: {
-            from, to,
+            from: f.from, to: f.to,
             min_diff: f.minDiff,
             courier_slug: f.courier || undefined,
             invoice_no: f.invoiceNo || undefined,
@@ -115,12 +115,11 @@ export function useDisputeInvoices(
  * come from Content-Disposition.
  */
 export function useDisputeLinesExport() {
-  const { from, to } = useDateRange();
   return useMutation({
     mutationFn: async ({ fmt, f, view }: { fmt: "csv" | "xlsx"; f: DisputeLineFilters; view: "lines" | "invoices" }) => {
       const res = await api.get(`/disputes/${view}/export/${fmt}`, {
         params: {
-          from, to,
+          from: f.from, to: f.to,
           min_diff: f.minDiff,
           // sort_by only applies to the line-item export
           ...(view === "lines" ? { sort_by: f.sortBy } : {}),

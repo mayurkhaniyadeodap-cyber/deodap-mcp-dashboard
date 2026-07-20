@@ -10,6 +10,7 @@ overcharging ₹ do not exist and are not faked. Savings is a separate endpoint.
 import asyncio
 import logging
 import time
+from datetime import date, timedelta
 
 from app.core.config import settings
 from app.schemas.discrepancies import CourierRate, DiscrepancyResponse, RateDiff
@@ -376,10 +377,33 @@ async def get_claimable_rate(
 _LINES_MIN_DIFF_DEFAULT = 50.0
 _LINES_PAGE_DEFAULT = 50
 _LINES_TTL_SECONDS = 1800  # 30 min
+# The page's DEFAULT view — pre-warmed on a schedule so opening it is instant.
+# ₹100 floor (only material claims) on a MATURED window (ends ~2 weeks back so
+# reconciliation has settled — no immature rows in a list you file with carriers).
+_LINES_DEFAULT_MIN_DIFF = 100.0
+_LINES_MATURED_LAG_DAYS = 14
+_LINES_MATURED_SPAN_DAYS = 30
 _lines_cache: dict[tuple, tuple[float, "_LinesData"]] = {}
 _lines_inflight: set[tuple] = set()
 _lines_job_sem = asyncio.Semaphore(1)
 _lines_primary_key: tuple = (None, None, _LINES_MIN_DIFF_DEFAULT)
+
+
+def matured_window() -> tuple[str, str]:
+    """The default dispute window: a 30-day span ending ~2 weeks ago, so its
+    reconciliation has matured. Recomputed each call (shifts by day). The FRONTEND
+    computes the same window for its default view, so its request hits the
+    pre-warmed cache exactly."""
+    to = date.today() - timedelta(days=_LINES_MATURED_LAG_DAYS)
+    frm = to - timedelta(days=_LINES_MATURED_SPAN_DAYS - 1)
+    return frm.isoformat(), to.isoformat()
+
+
+def _default_lines_keys() -> list[tuple]:
+    """Keys the scheduler keeps hot: the ₹100 default view AND the heavier ₹50 view
+    (a common toggle), both on the matured window."""
+    mf, mt = matured_window()
+    return [(mf, mt, _LINES_DEFAULT_MIN_DIFF), (mf, mt, _LINES_MIN_DIFF_DEFAULT)]
 
 
 class _LinesData:
@@ -492,11 +516,46 @@ def _spawn_lines_refresh(key: tuple) -> None:
 
 
 async def _lines_scheduler() -> None:
+    """Pre-warm the default views on startup and every 30 min so the page is always
+    instant. Also keeps the last-viewed (window, min_diff) hot for quick re-visits."""
     logger.info("dispute-lines: scheduler started (every %ds)", _LINES_TTL_SECONDS)
     while True:
         if settings.mcp_connect_url:
-            await _refresh_lines(_lines_primary_key)
+            keys = _default_lines_keys()
+            for key in keys:  # ₹100 default + ₹50 heavy, matured window
+                await _refresh_lines(key)
+            if _lines_primary_key not in keys:  # whatever the user is actually viewing
+                await _refresh_lines(_lines_primary_key)
         await asyncio.sleep(_LINES_TTL_SECONDS)
+
+
+def _fallback_lines_data() -> "_LinesData | None":
+    """The freshest warm enumeration to show while a cold key builds — prefer a
+    pre-warmed default, else the most recently built window."""
+    for k in _default_lines_keys():
+        h = _lines_cache.get(k)
+        if h is not None:
+            return h[1]
+    if _lines_cache:
+        return max(_lines_cache.values(), key=lambda v: v[0])[1]
+    return None
+
+
+def _serve_lines_source(key: tuple) -> tuple["_LinesData | None", bool, bool]:
+    """Resolve what to serve for `key` WITHOUT ever enumerating inline:
+      (data, computing, recalculating).
+    Fresh warm → serve it. Stale → serve it + recalc (bg refresh). Cold → serve a
+    fallback warm view + recalc (bg build), or computing if nothing is warm yet."""
+    hit = _lines_cache.get(key)
+    if hit is not None and (time.monotonic() - hit[0]) < _LINES_TTL_SECONDS:
+        return hit[1], False, False
+    _spawn_lines_refresh(key)  # build/refresh off the request path
+    if hit is not None:
+        return hit[1], False, True  # stale
+    fb = _fallback_lines_data()
+    if fb is not None:
+        return fb, False, True  # cold → show a warm view while this one builds
+    return None, True, False  # nothing warm anywhere yet
 
 
 def start_lines_scheduler() -> None:
@@ -560,16 +619,11 @@ async def get_dispute_lines(
     global _lines_primary_key
     key = (date_from, date_to, min_diff)
     _lines_primary_key = key
-    now = time.monotonic()
 
-    hit = _lines_cache.get(key)
-    stale = hit is not None and (now - hit[0]) >= _LINES_TTL_SECONDS
-    if hit is None or stale:
-        _spawn_lines_refresh(key)  # build/refresh in the background
-        if hit is None:
-            return base.model_copy(update={"source": "mock", "computing": True})
+    data, computing, recalculating = _serve_lines_source(key)
+    if data is None:
+        return base.model_copy(update={"source": "mock", "computing": computing})
 
-    data = hit[1]
     filtered = _filter_sort(data, courier_slug, invoice_no, sort_by)
     start = (page - 1) * page_size
     excluded = (data.unpriced_by_courier.get(courier_slug, 0)
@@ -582,7 +636,7 @@ async def get_dispute_lines(
         "excluded_no_applied_rate": excluded,
         "couriers": data.couriers,
         "source": "live",
-        "recalculating": bool(stale),
+        "recalculating": recalculating,
     })
 
 
@@ -645,16 +699,11 @@ async def get_dispute_invoices(
     global _lines_primary_key
     key = (date_from, date_to, min_diff)
     _lines_primary_key = key
-    now = time.monotonic()
 
-    hit = _lines_cache.get(key)
-    stale = hit is not None and (now - hit[0]) >= _LINES_TTL_SECONDS
-    if hit is None or stale:
-        _spawn_lines_refresh(key)
-        if hit is None:
-            return base.model_copy(update={"source": "mock", "computing": True})
+    data, computing, recalculating = _serve_lines_source(key)
+    if data is None:
+        return base.model_copy(update={"source": "mock", "computing": computing})
 
-    data = hit[1]
     filtered = _filter_sort(data, courier_slug, invoice_no, "rate_diff")
     groups = _group_by_invoice(filtered)
     start = (page - 1) * page_size
@@ -669,7 +718,7 @@ async def get_dispute_invoices(
         "excluded_no_applied_rate": excluded,
         "couriers": data.couriers,
         "source": "live",
-        "recalculating": bool(stale),
+        "recalculating": recalculating,
     })
 
 

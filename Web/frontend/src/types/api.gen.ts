@@ -1141,6 +1141,11 @@ export interface components {
             has_delta: boolean;
             /** Subtitle */
             subtitle?: string | null;
+            /**
+             * Unavailable
+             * @default false
+             */
+            unavailable: boolean;
         };
         /** LoginRequest */
         LoginRequest: {

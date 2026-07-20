@@ -22,6 +22,9 @@ class Kpi(BaseModel):
     has_delta: bool = False
     # Optional context line (e.g. the SLA breakdown). Additive.
     subtitle: str | None = None
+    # True when the selected window returned no data (e.g. an empty "Today") → the UI
+    # renders "N/A" instead of a misleading ₹0/0. Never fabricated.
+    unavailable: bool = False
 
 
 class DistributionSlice(BaseModel):

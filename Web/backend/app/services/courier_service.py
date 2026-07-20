@@ -198,8 +198,11 @@ async def list_couriers(
 
     try:
         couriers = await _fetch_live(date_from, date_to)
-        if not couriers:
-            raise ValueError("MCP returned no couriers")
+        # An EMPTY result is a valid live answer (the selected window has no orders —
+        # e.g. "Today" before the day's data lands). Return it as-is so the charts
+        # stay consistent with the KPI cards (both show "no data"). Only a genuine
+        # MCP failure (exception below) falls back to mock — never an empty window,
+        # which previously surfaced phantom mock data under a LIVE badge.
         _cache[key] = (now, couriers)
         logger.info("Loaded %d couriers from live MCP (from=%s to=%s)", len(couriers), date_from, date_to)
         return couriers

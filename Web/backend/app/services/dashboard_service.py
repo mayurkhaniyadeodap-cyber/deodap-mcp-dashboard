@@ -66,16 +66,18 @@ def _delta_windows(date_from: str | None, date_to: str | None) -> tuple[dict, di
 
 
 def _delta_kpi(key: str, label: str, value: float, cur: float | None, prev: float | None,
-               fmt: str, higher_is_good: bool | None, subtitle: str | None = None) -> Kpi:
+               fmt: str, higher_is_good: bool | None, subtitle: str | None = None,
+               unavailable: bool = False) -> Kpi:
     """KPI with a real % delta. `value` is the number shown (selected window);
     `(cur, prev)` are the COMPLETE-period scalars the delta is computed from — so the
     displayed value can include today while the delta stays unbiased. `higher_is_good`
     None → show the % but with a NEUTRAL tone (movement without a good/bad judgement),
     for volume metrics where a direction isn't inherently better or worse. cur/prev
     None or prev==0 → no delta shown (never fabricated)."""
-    if cur is None or prev is None or prev == 0:
+    if unavailable or cur is None or prev is None or prev == 0:
         return Kpi(key=key, label=label, value=round(value, 2), format=fmt,
-                   delta=0.0, delta_tone="neutral", has_delta=False, subtitle=subtitle)
+                   delta=0.0, delta_tone="neutral", has_delta=False, subtitle=subtitle,
+                   unavailable=unavailable)
     d = round((cur - prev) / prev * 100, 1)
     if higher_is_good is None:
         tone = "neutral"
@@ -128,9 +130,10 @@ async def get_rate_diff(date_from: str | None = None, date_to: str | None = None
     )
 
 
-def _kpi(key: str, label: str, value: float, fmt: str, subtitle: str | None = None) -> Kpi:
+def _kpi(key: str, label: str, value: float, fmt: str, subtitle: str | None = None,
+         unavailable: bool = False) -> Kpi:
     return Kpi(key=key, label=label, value=round(value, 2), format=fmt, delta=0.0,
-               delta_tone="neutral", subtitle=subtitle)
+               delta_tone="neutral", subtitle=subtitle, unavailable=unavailable)
 
 
 def _totals(oa: dict, state: dict, cod: dict, sla: dict) -> dict:
@@ -199,15 +202,19 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
     def dprev(k: str) -> float | None:
         return dp[k] if dp else None
 
+    # The selected window returned no orders at all (e.g. "Today" before the day's
+    # data lands). Every value below is a real 0 for an EMPTY range → show "N/A" so
+    # it doesn't read as a genuine ₹0. Never fabricates a value.
+    window_empty = cur["orders"] == 0 and not (oa.get("breakdown") or [])
     kpis = [
         # Total Billed Amount = shipping_cost_summary forward + RTO (= total_cost).
-        _delta_kpi("total_billing", "Total Billed Amount", cur["total_cost"], dcur("total_cost"), dprev("total_cost"), "currency", False, "forward + RTO cost"),
+        _delta_kpi("total_billing", "Total Billed Amount", cur["total_cost"], dcur("total_cost"), dprev("total_cost"), "currency", False, "forward + RTO cost", unavailable=window_empty),
         # Volume — real delta, NEUTRAL tone (more/fewer orders isn't good/bad).
-        _delta_kpi("total_shipments", "Total Shipments", cur["orders"], dcur("orders"), dprev("orders"), "number", None),
+        _delta_kpi("total_shipments", "Total Shipments", cur["orders"], dcur("orders"), dprev("orders"), "number", None, unavailable=window_empty),
         # Avg Cost/Shipment = Total Billed ÷ Total Shipments.
-        _delta_kpi("average_cost", "Avg Cost/Shipment", cur["avg_cost"], dcur("avg_cost"), dprev("avg_cost"), "currency", False),
+        _delta_kpi("average_cost", "Avg Cost/Shipment", cur["avg_cost"], dcur("avg_cost"), dprev("avg_cost"), "currency", False, unavailable=window_empty),
         # COD Remittance = live remitted (cod_remittance_aging); remittance lags → no delta.
-        _kpi("total_cod", "COD Remittance", remitted, "currency", "actual COD remitted (cod_remittance_aging) · lags a few days"),
+        _kpi("total_cod", "COD Remittance", remitted, "currency", "actual COD remitted (cod_remittance_aging) · lags a few days", unavailable=window_empty),
     ]
 
     # Distribution — orders per courier.

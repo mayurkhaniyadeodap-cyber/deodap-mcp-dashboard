@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   type LucideIcon,
   Map as MapIcon,
-  Receipt,
   Scale,
   Settings,
   TrendingUp,
@@ -48,7 +47,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Bills Overview", path: "/bills", icon: FileText },
       { label: "Courier Comparison", path: "/couriers", icon: GitCompareArrows },
       { label: "Discrepancies", path: "/discrepancies", icon: Boxes },
-      { label: "Dispute Lines", path: "/dispute-lines", icon: Receipt },
+      // "Dispute Lines" nav entry temporarily removed (page/route/endpoints/scheduler
+      // all still live — restore this line to re-enable it in the sidebar):
+      // { label: "Dispute Lines", path: "/dispute-lines", icon: Receipt },
       { label: "COD Reconciliation", path: "/cod", icon: Wallet },
     ],
   },
