@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
-import type { ClaimableRateResponse, CourierBillingResponse, DashboardResponse } from "@/types/api";
+import type {
+  ClaimableRateResponse,
+  CourierBillingResponse,
+  DashboardResponse,
+  RateDiffKpi,
+} from "@/types/api";
 import { pollWhileUnavailable } from "@/utils/source";
 
 /** GET /api/dashboard?from&to — KPIs, courier billing, distribution, state cost (fast, ~6s). */
@@ -32,6 +37,21 @@ export function useClaimableRate() {
       const d = query.state.data;
       return d && (d.computing || d.recalculating) ? 15_000 : false;
     },
+  });
+}
+
+/**
+ * GET /api/dashboard/rate-diff?from&to — the live "Pending Reconciliation" amount:
+ * the ₹ rate difference (invoiced − applied) on unreconciled ("Disputed") lines, from
+ * reconciliation_summary(group_by=status). This endpoint predates the pending-
+ * reconciliation split and is already deployed, so the KPI works WITHOUT a backend
+ * restart. Shape: { kpi: { value, ... }, source, date_field }; value is the ₹ amount.
+ */
+export function useDashboardRateDiff() {
+  const { from, to } = useDateRange();
+  return useQuery({
+    queryKey: ["dashboard-rate-diff", from, to],
+    queryFn: async () => (await api.get<RateDiffKpi>("/dashboard/rate-diff", { params: { from, to } })).data,
   });
 }
 

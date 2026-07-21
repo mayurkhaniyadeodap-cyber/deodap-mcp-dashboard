@@ -29,6 +29,41 @@ CACHE_TTL_SECONDS = 60.0
 background_job_sem = asyncio.Semaphore(1)
 
 
+class inflight_guard:
+    """Async context manager that de-duplicates concurrent work on the same key.
+    Registers `key` in `registry` (a set); yields True to the winner and False if a
+    job for that key is already running (so the caller can bail without re-doing it).
+    Used by the warm-cache refreshers so a burst of stale requests spawns ONE refresh
+    per key instead of many that serialize on the shared background semaphore."""
+
+    def __init__(self, registry: set, key) -> None:
+        self._registry = registry
+        self._key = key
+        self.acquired = False
+
+    async def __aenter__(self) -> bool:
+        if self._key in self._registry:
+            self.acquired = False
+        else:
+            self._registry.add(self._key)
+            self.acquired = True
+        return self.acquired
+
+    async def __aexit__(self, *exc) -> None:
+        if self.acquired:
+            self._registry.discard(self._key)
+
+
+def prune_cache(cache: dict, max_entries: int) -> None:
+    """Bound a warm/TTL cache: if it exceeds `max_entries`, evict the OLDEST entries
+    (by the stored monotonic timestamp at value[0]). Keeps per-window warm stores
+    from growing unbounded as users pick many date ranges."""
+    over = len(cache) - max_entries
+    if over > 0:
+        for k in sorted(cache, key=lambda k: cache[k][0])[:over]:
+            cache.pop(k, None)
+
+
 def new_cache() -> dict:
     """A fresh per-service cache: {(from, to): (monotonic_ts, value)}."""
     return {}

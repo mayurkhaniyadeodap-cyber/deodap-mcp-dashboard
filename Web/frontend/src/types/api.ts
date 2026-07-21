@@ -34,6 +34,7 @@ export type Kpi = Schemas["Kpi"];
 export type DistributionSlice = Schemas["DistributionSlice"];
 export type StateCostRow = Schemas["StateCostRow"];
 export type RateDiffKpi = Schemas["RateDiffKpi"];
+export type PendingReconciliationResponse = Schemas["PendingReconciliationResponse"];
 export type CourierBillingResponse = Schemas["CourierBillingResponse"];
 export type CourierBillingRow = Schemas["CourierBillingRow"];
 

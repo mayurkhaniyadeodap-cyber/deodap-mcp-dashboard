@@ -76,3 +76,19 @@ class RateDiffKpi(BaseModel):
     kpi: Kpi
     source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "reconciliation_at"
+
+
+class PendingReconciliationResponse(BaseModel):
+    """'Pending Reconciliation' KPI — for the reconciliation lines still unreconciled
+    (recon status 'Disputed') in the selected window, from
+    reconciliation_summary(group_by=status):
+      • amount = the ₹ rate difference on those lines (invoiced − applied) — the money
+        pending reconciliation. This is the displayed KPI value.
+      • count  = how many lines are pending (kept as additive context).
+    Reconciliation-book basis, so date_field = reconciliation_at. On MCP failure the
+    response is source='unavailable' with zeros — never fixture/sample values."""
+
+    amount: float = 0.0
+    count: int = 0
+    source: Literal["live", "mock", "unavailable"] = "mock"
+    date_field: str = "reconciliation_at"

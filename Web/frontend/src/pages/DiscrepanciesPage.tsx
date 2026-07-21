@@ -1,3 +1,4 @@
+import { CheckCircle2 } from "lucide-react";
 import { type Column, DataTable } from "@/components/shared/DataTable";
 import { PageError } from "@/components/shared/PageError";
 import { BillingTabs } from "@/components/shared/PageTabs";
@@ -25,7 +26,6 @@ function rtoColor(rate: number): string {
 
 type W = WeightDispute & Record<string, unknown>;
 type R = RateDispute & Record<string, unknown>;
-type Rec = ReconciledCourier & Record<string, unknown>;
 type Rto = Courier & Record<string, unknown>;
 
 const WEIGHT_COLS: Column<W>[] = [
@@ -41,11 +41,6 @@ const RATE_COLS: Column<R>[] = [
   { key: "applied_rate", header: "Applied Rate", sortable: true, align: "right", cell: (r) => money(r.applied_rate) },
   { key: "invoiced_rate", header: "Invoice Rate", sortable: true, align: "right", cell: (r) => money(r.invoiced_rate) },
   { key: "rate_diff", header: "Rate Difference", sortable: true, align: "right", cell: (r) => <span className="font-medium tabular-nums text-destructive">{formatCurrencyINR(r.rate_diff)}</span> },
-];
-const RECONCILED_COLS: Column<Rec>[] = [
-  { key: "courier", header: "Courier", sortable: true, cell: (r) => <span className="font-medium">{r.courier}</span> },
-  { key: "reconciled_lines", header: "Reconciled Lines", sortable: true, align: "right", cell: (r) => <span className="tabular-nums">{formatNumber(r.reconciled_lines)}</span> },
-  { key: "reconciled_amount", header: "Reconciled Amount", sortable: true, align: "right", cell: (r) => <span className="font-medium tabular-nums text-success">{formatCurrencyINR(r.reconciled_amount)}</span> },
 ];
 const RTO_COLS: Column<Rto>[] = [
   { key: "name", header: "Courier", sortable: true, cell: (r) => <span className="font-medium">{r.name}</span> },
@@ -66,7 +61,9 @@ export default function DiscrepanciesPage() {
   // Overcharging Alerts = only rows where the courier invoiced MORE than we applied.
   const rateData = (recon.data?.rate_disputes ?? []).filter((r) => r.invoiced_rate > r.applied_rate) as R[];
   const rate = useTable<R>({ data: rateData, searchKeys: ["awb", "courier"], initialSort: { key: "rate_diff", dir: "desc" }, pageSize: 10 });
-  const reconciled = useTable<Rec>({ data: (recon.data?.reconciled ?? []) as Rec[], initialSort: { key: "reconciled_amount", dir: "desc" }, pageSize: 10 });
+  // Reconciled couriers — same live source (reconciliation_summary status=Reconciled),
+  // rendered as a compact summary card (see ReconciledSummaryCard) instead of a table.
+  const reconciledCouriers = recon.data?.reconciled ?? [];
   const rto = useTable<Rto>({ data: (couriers.data ?? []) as Rto[], searchKeys: ["name"], initialSort: { key: "rto_pct", dir: "desc" }, pageSize: 10 });
 
   if (recon.isError && couriers.isError) {
@@ -98,14 +95,9 @@ export default function DiscrepanciesPage() {
         <DataTable columns={RATE_COLS} data={rate.rows} getRowId={(r) => r.awb} loading={recon.isLoading} sort={rate.sort} onSortChange={rate.setSort} zebra className="rounded-none border-0" emptyTitle="No overcharges" emptyMessage="No rate mismatches for this range." />
       </Section>
 
-      {/* 3. Reconciled Successfully — reconciliation_summary (status=Reconciled) */}
-      <Section
-        title="Reconciled Successfully"
-        subtitle="Per-courier reconciled lines and amount"
-        badge={reconSrc}
-      >
-        <DataTable columns={RECONCILED_COLS} data={reconciled.rows} getRowId={(r) => r.courier} loading={recon.isLoading} sort={reconciled.sort} onSortChange={reconciled.setSort} zebra className="rounded-none border-0" emptyTitle="Nothing reconciled" emptyMessage="No reconciled lines for this range." />
-      </Section>
+      {/* 3. Reconciled Successfully — reconciliation_summary (status=Reconciled).
+          Compact summary card (one row per reconciled courier) instead of a table. */}
+      <ReconciledSummaryCard data={reconciledCouriers} badge={reconSrc} loading={recon.isLoading} />
 
       {/* 4. RTO Analysis — rto_analysis (RTO% + shipments) + shipping_cost_summary (RTO cost) */}
       <Section
@@ -148,6 +140,62 @@ function Section({
         {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {children}
+    </Card>
+  );
+}
+
+/** Compact "Reconciled Successfully" card — one row per successfully reconciled
+ *  courier. Same live data as before (reconciliation_summary status=Reconciled); the
+ *  courier count is derived from the data length (never hardcoded). */
+function ReconciledSummaryCard({
+  data,
+  badge,
+  loading,
+}: {
+  data: ReconciledCourier[];
+  badge?: SourceStatus;
+  loading: boolean;
+}) {
+  const count = data.length;
+  return (
+    <Card className="overflow-hidden">
+      {/* Header: title + LIVE badge (left), dynamic courier count (right) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-[22px] font-semibold leading-tight tracking-tight">Reconciled Successfully</h3>
+          <SourceBadge status={badge} />
+        </div>
+        {!loading && count > 0 && (
+          <span className="inline-flex items-center rounded-full bg-success/15 px-3 py-1 text-xs font-semibold text-success">
+            {count} {count === 1 ? "Courier" : "Couriers"}
+          </span>
+        )}
+      </div>
+
+      {/* Body: one compact row per reconciled courier */}
+      {loading ? (
+        <div className="space-y-2 p-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-9 animate-pulse rounded-lg bg-muted/40" />
+          ))}
+        </div>
+      ) : count === 0 ? (
+        <div className="p-8 text-center text-sm text-muted-foreground">No reconciled lines for this range.</div>
+      ) : (
+        <ul className="divide-y divide-border/60">
+          {data.map((c) => (
+            <li
+              key={c.courier}
+              className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40"
+            >
+              <span className="truncate text-sm font-medium">{c.courier}</span>
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-success">
+                <CheckCircle2 className="size-4" /> Matched
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

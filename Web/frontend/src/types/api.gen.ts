@@ -92,6 +92,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/pending-reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard Pending Reconciliation */
+        get: operations["get_dashboard_pending_reconciliation_api_dashboard_pending_reconciliation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/courier-billing": {
         parameters: {
             query?: never;
@@ -1189,6 +1206,40 @@ export interface components {
             total_pages: number;
         };
         /**
+         * PendingReconciliationResponse
+         * @description 'Pending Reconciliation' KPI — for the reconciliation lines still unreconciled
+         *     (recon status 'Disputed') in the selected window, from
+         *     reconciliation_summary(group_by=status):
+         *       • amount = the ₹ rate difference on those lines (invoiced − applied) — the money
+         *         pending reconciliation. This is the displayed KPI value.
+         *       • count  = how many lines are pending (kept as additive context).
+         *     Reconciliation-book basis, so date_field = reconciliation_at. On MCP failure the
+         *     response is source='unavailable' with zeros — never fixture/sample values.
+         */
+        PendingReconciliationResponse: {
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock" | "unavailable";
+            /**
+             * Date Field
+             * @default reconciliation_at
+             */
+            date_field: string;
+        };
+        /**
          * Preferences
          * @description System info only — hardcoded throughout the app (₹ INR, IST dates, kg).
          */
@@ -1860,6 +1911,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateDiffKpi"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_pending_reconciliation_api_dashboard_pending_reconciliation_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingReconciliationResponse"];
                 };
             };
             /** @description Validation Error */

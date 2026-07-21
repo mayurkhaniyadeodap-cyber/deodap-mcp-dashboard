@@ -3,7 +3,12 @@
 from fastapi import APIRouter, Depends
 
 from app.api.deps import DateRange, date_range_params, get_current_user
-from app.schemas.dashboard import CourierBillingResponse, DashboardResponse, RateDiffKpi
+from app.schemas.dashboard import (
+    CourierBillingResponse,
+    DashboardResponse,
+    PendingReconciliationResponse,
+    RateDiffKpi,
+)
 from app.services import dashboard_service
 
 router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
@@ -19,6 +24,16 @@ async def get_dashboard_rate_diff(dates: DateRange = Depends(date_range_params))
     # Slow (weight_reconciliation_summary); own 60s cache. Split out so the main
     # dashboard loads in ~3s and this KPI fetches with its own skeleton.
     return await dashboard_service.get_rate_diff(date_from=dates.date_from, date_to=dates.date_to)
+
+
+@router.get("/dashboard/pending-reconciliation", response_model=PendingReconciliationResponse)
+async def get_dashboard_pending_reconciliation(
+    dates: DateRange = Depends(date_range_params),
+) -> PendingReconciliationResponse:
+    # COUNT of unreconciled (status="Disputed") reconciliation lines for the window
+    # (reconciliation_summary group_by=status). Own 60s cache; separate endpoint so
+    # it never delays the main dashboard.
+    return await dashboard_service.get_pending_reconciliation(date_from=dates.date_from, date_to=dates.date_to)
 
 
 @router.get("/dashboard/courier-billing", response_model=CourierBillingResponse)

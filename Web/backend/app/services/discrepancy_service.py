@@ -530,6 +530,8 @@ async def _refresh_lines(key: tuple) -> None:
             try:
                 data = await _build_lines(*key)
                 _lines_cache[key] = (time.monotonic(), data)
+                # Each _LinesData holds thousands of rows → bound hard to avoid growth.
+                live_support.prune_cache(_lines_cache, 8)
             except Exception:  # noqa: BLE001 — keep last good, never fabricate
                 logger.exception("dispute-lines: build failed for %s; keeping last good", key)
 

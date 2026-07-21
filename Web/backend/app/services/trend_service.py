@@ -44,20 +44,21 @@ async def _month_costs(label: str, ws: str, we: str, sem: asyncio.Semaphore) -> 
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> TrendResponse:
     args = live_support.date_args(date_from, date_to)
-
-    daily_raw = live_support.parse_tool_json(
-        await mcp_client.call_tool("daily_booking_trend", args)
+    windows = month_windows(date_from, date_to)
+    partial_by_label = {w[0]: w[3] for w in windows}
+    sem = asyncio.Semaphore(4)
+    # daily_booking_trend is independent of the monthly windows → run it in the SAME
+    # concurrent wave as the per-month cost calls (was sequential: daily THEN monthly).
+    daily_raw_r, *results = await asyncio.gather(
+        mcp_client.call_tool("daily_booking_trend", args),
+        *[_month_costs(lbl, ws, we, sem) for lbl, ws, we, _ in windows],
     )
+    daily_raw = live_support.parse_tool_json(daily_raw_r)
     daily = [
         TrendDay(day=str(d.get("day", ""))[:10], orders=int(d.get("orders", 0) or 0),
                  order_value=round(float(d.get("order_value", 0) or 0), 2))
         for d in daily_raw.get("days", []) or []
     ]
-
-    windows = month_windows(date_from, date_to)
-    partial_by_label = {w[0]: w[3] for w in windows}
-    sem = asyncio.Semaphore(4)
-    results = await asyncio.gather(*[_month_costs(lbl, ws, we, sem) for lbl, ws, we, _ in windows])
 
     totals: dict[str, float] = {}
     month_costs: dict[str, dict[str, float]] = {}

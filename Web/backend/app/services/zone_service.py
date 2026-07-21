@@ -9,6 +9,7 @@ a known state roll into an "Unknown" row and are reported; states present in
 only one tool are kept with blank metrics and listed in `unjoined`.
 """
 
+import asyncio
 import logging
 import re
 
@@ -78,12 +79,13 @@ def _load_mock() -> ZonesResponse:
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> ZonesResponse:
     args = live_support.date_args(date_from, date_to)
-    cost = live_support.parse_tool_json(
-        await mcp_client.call_tool("shipping_cost_summary", {**args, "group_by": "state"})
+    # The two tools are independent → fetch concurrently (was sequential ≈ sum of both).
+    cost_r, geo_r = await asyncio.gather(
+        mcp_client.call_tool("shipping_cost_summary", {**args, "group_by": "state"}),
+        mcp_client.call_tool("geo_performance", {**args, "group_by": "state", "limit": 500}),
     )
-    geo = live_support.parse_tool_json(
-        await mcp_client.call_tool("geo_performance", {**args, "group_by": "state", "limit": 500})
-    )
+    cost = live_support.parse_tool_json(cost_r)
+    geo = live_support.parse_tool_json(geo_r)
 
     cost_map: dict[str, dict] = {}
     geo_map: dict[str, dict] = {}

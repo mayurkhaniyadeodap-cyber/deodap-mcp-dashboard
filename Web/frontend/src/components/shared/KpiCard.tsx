@@ -48,8 +48,10 @@ const KPI_META: Record<string, { accent: Accent; icon: LucideIcon }> = {
 };
 
 function formatValue(kpi: Kpi): string {
-  // No data in the selected window → "N/A" (never a misleading ₹0/0).
-  if (kpi.unavailable) return "N/A";
+  // No data in the selected window, or a missing/non-numeric value → "N/A" (never a
+  // misleading ₹0/0, and never "₹NaN" — Intl.NumberFormat.format(undefined) yields
+  // "NaN", so guard before it reaches the formatter).
+  if (kpi.unavailable || !Number.isFinite(kpi.value)) return "N/A";
   switch (kpi.format) {
     case "currency":
       return formatCurrencyINRCompact(kpi.value);
@@ -85,7 +87,11 @@ export function KpiCard({ kpi, accent: accentProp, icon: iconProp, source, basis
     kpi.delta_tone === "positive" ? "text-success"
     : kpi.delta_tone === "negative" ? "text-destructive"
     : "text-muted-foreground";
-  const actionNeeded = kpi.key === "pending_recon" && kpi.value > 0;
+  // Pending Reconciliation status pill (approved design): live amount > 0 → "Action
+  // Needed"; live amount exactly 0 → "No Pending Reconciliation". Neither shows when
+  // the value is unavailable (the tile renders N/A instead).
+  const actionNeeded = kpi.key === "pending_recon" && !kpi.unavailable && kpi.value > 0;
+  const noPending = kpi.key === "pending_recon" && !kpi.unavailable && kpi.value === 0;
 
   return (
     <div
@@ -146,6 +152,12 @@ export function KpiCard({ kpi, accent: accentProp, icon: iconProp, source, basis
         <div className="mt-3">
           <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
             <AlertTriangle className="size-3" /> Action Needed
+          </span>
+        </div>
+      ) : noPending ? (
+        <div className="mt-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+            <CheckCircle2 className="size-3" /> No Pending Reconciliation
           </span>
         </div>
       ) : kpi.has_delta ? (

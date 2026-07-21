@@ -91,14 +91,25 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
     # delta is trustworthy. Remittance (remitted / pending) LAGS days, so those get NO
     # delta: recent windows show artificially low remitted / shifting pending, which
     # would read as a swing that's really just un-posted reconciliation. Concurrent.
-    oa_r, cod_r, doa_c, doa_p = await asyncio.gather(
+    # The weekly-chart windows depend only on the date args (not on the KPI results),
+    # so fire the KPI/delta calls AND the 8 weekly calls in ONE concurrent wave
+    # instead of two sequential gather waves (was: main gather → then weekly gather).
+    windows = _four_windows(date_from, date_to)
+    results = await asyncio.gather(
         mcp_client.call_tool("order_analytics", {**args, "group_by": "courier"}),
         mcp_client.call_tool("cod_remittance_summary", args),
         mcp_client.call_tool("order_analytics", {**cur_args, "group_by": "courier"}),
         mcp_client.call_tool("order_analytics", {**prev_args, "group_by": "courier"}),
+        *[_oa_cod_value(ws, we) for ws, we in windows],
+        *[_remitted(ws, we) for ws, we in windows],
         return_exceptions=True,
     )
+    oa_r, cod_r, doa_c, doa_p = results[:4]
+    weekly_results = results[4:]
     for r in (oa_r, cod_r):  # current required → mock fallback on failure
+        if isinstance(r, Exception):
+            raise r
+    for r in weekly_results:  # weekly required too (matches prior no-return_exceptions gather)
         if isinstance(r, Exception):
             raise r
     oa = live_support.parse_tool_json(oa_r)
@@ -138,13 +149,8 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
     ]
     reconciliation.sort(key=lambda c: c.cod_value, reverse=True)
 
-    # Weekly: 4 windows, each = order_analytics.cod_value + cod_remittance.remitted.
-    windows = _four_windows(date_from, date_to)
-    week_vals = await asyncio.gather(
-        *[_oa_cod_value(ws, we) for ws, we in windows],
-        *[_remitted(ws, we) for ws, we in windows],
-    )
-    collected_vals, remitted_vals = week_vals[:4], week_vals[4:]
+    # Weekly (collected/remitted) — computed in the single concurrent wave above.
+    collected_vals, remitted_vals = weekly_results[:4], weekly_results[4:]
     weekly = [
         CodWeekly(week=f"Week {i + 1}", collected=round(collected_vals[i], 2), remitted=round(remitted_vals[i], 2))
         for i in range(4)

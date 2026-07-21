@@ -12,6 +12,7 @@ No fictional cod/fuel segments, no zone panel.
 
 import asyncio
 import logging
+import time
 from datetime import date, timedelta
 
 from app.schemas.dashboard import (
@@ -20,6 +21,7 @@ from app.schemas.dashboard import (
     DashboardResponse,
     DistributionSlice,
     Kpi,
+    PendingReconciliationResponse,
     RateDiffKpi,
     StateCostRow,
 )
@@ -139,6 +141,53 @@ async def get_rate_diff(date_from: str | None = None, date_to: str | None = None
     )
 
 
+# --- Pending Reconciliation (amount + count) -----------------------------------
+# For the reconciliation lines still unreconciled (recon status "Disputed") in the
+# window — from reconciliation_summary(group_by=status):
+#   amount = that group's rate_diff (invoiced − applied) → the ₹ pending reconciliation
+#            (the displayed KPI value);
+#   count  = that group's row count (additive context).
+# The tool's "Disputed" is a pending-reconciliation line (project-wide relabel). Uses
+# the SAME MCP call as _rate_diff_live, so the tool cache de-dupes it. Own 60s cache;
+# separate endpoint so it never blocks the dashboard.
+_pending_recon_cache = live_support.new_cache()
+
+
+def _pending_reconciliation_mock() -> PendingReconciliationResponse:
+    # Honest "unavailable" (zeros) on MCP failure — never a fabricated amount/count.
+    return PendingReconciliationResponse(source="unavailable", date_field="reconciliation_at")
+
+
+async def _pending_reconciliation_live(
+    date_from: str | None, date_to: str | None
+) -> PendingReconciliationResponse:
+    args = live_support.date_args(date_from, date_to)
+    r = live_support.parse_tool_json(
+        await mcp_client.call_tool("reconciliation_summary", {**args, "group_by": "status"})
+    )
+    # Prefer the "Disputed" status group; fall back to the tool's grand totals if the
+    # breakdown row is absent (both carry rate_diff + disputed/rows).
+    disputed = next((b for b in r.get("breakdown", []) or [] if b.get("group") == "Disputed"), None)
+    totals = r.get("totals") or {}
+    src = disputed if disputed is not None else totals
+    amount = float(src.get("rate_diff", 0) or 0)
+    count = int((disputed or {}).get("rows", 0) or 0) if disputed is not None else int(totals.get("disputed", 0) or 0)
+    return PendingReconciliationResponse(
+        amount=round(amount, 2), count=count, source="live", date_field="reconciliation_at"
+    )
+
+
+async def get_pending_reconciliation(
+    date_from: str | None = None, date_to: str | None = None
+) -> PendingReconciliationResponse:
+    """'Pending Reconciliation' KPI count (reconciliation_summary group_by=status) —
+    own 60s cache, fetched separately so it never delays the main dashboard."""
+    return await live_support.live_or_mock(
+        cache=_pending_recon_cache, key=(date_from, date_to), label="dashboard-pending-reconciliation",
+        fetch=lambda: _pending_reconciliation_live(date_from, date_to), mock=_pending_reconciliation_mock,
+    )
+
+
 def _kpi(key: str, label: str, value: float, fmt: str, subtitle: str | None = None,
          unavailable: bool = False) -> Kpi:
     return Kpi(key=key, label=label, value=round(value, 2), format=fmt, delta=0.0,
@@ -180,15 +229,25 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
                  ("shipping_cost_summary", {"group_by": "state"}),
                  ("cod_remittance_aging", {})]
     val_calls = [mcp_client.call_tool(t, {**val_args, **e}) for t, e in val_tools]
-    delta_calls = [
+    # DEDUP: when the selected window is already COMPLETE (ends before today),
+    # _delta_windows makes the delta's CURRENT window identical to the selected
+    # window — so order_analytics / shipping_cost_summary for it would be the exact
+    # same MCP calls as the value calls above. Reuse those results instead of
+    # re-fetching (saves 2 MCP calls + 2 units of concurrency; the delta output is
+    # unchanged). When the selection includes today (partial), cur ≠ val and all
+    # four delta calls run as before.
+    cur_is_val = cur_args == val_args
+    cur_delta_calls = [] if cur_is_val else [
         mcp_client.call_tool("order_analytics", {**cur_args, "group_by": "courier"}),
         mcp_client.call_tool("shipping_cost_summary", {**cur_args, "group_by": "state"}),
+    ]
+    prev_delta_calls = [
         mcp_client.call_tool("order_analytics", {**prev_args, "group_by": "courier"}),
         mcp_client.call_tool("shipping_cost_summary", {**prev_args, "group_by": "state"}),
     ]
-    results = await asyncio.gather(*val_calls, *delta_calls, return_exceptions=True)
+    results = await asyncio.gather(*val_calls, *cur_delta_calls, *prev_delta_calls, return_exceptions=True)
 
-    val_r, delta_r = results[:3], results[3:]
+    val_r = results[:3]
     for r in val_r:  # selected-window values are required → fail to mock fallback
         if isinstance(r, Exception):
             raise r
@@ -199,7 +258,13 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
     def _pj(r):
         return None if isinstance(r, Exception) else live_support.parse_tool_json(r)
 
-    doa_c, dcost_c, doa_p, dcost_p = (_pj(r) for r in delta_r)
+    rest = results[3:]
+    if cur_is_val:
+        # current-window delta inputs reuse the (already-parsed) selected-window data
+        doa_c, dcost_c = oa, state
+        doa_p, dcost_p = _pj(rest[0]), _pj(rest[1])
+    else:
+        doa_c, dcost_c, doa_p, dcost_p = (_pj(r) for r in rest)
     delta_ok = all(x is not None for x in (doa_c, dcost_c, doa_p, dcost_p))
     cur = _totals(oa, state, {}, {})  # displayed values (selected window)
     dc = _totals(doa_c, dcost_c, {}, {}) if delta_ok else None  # complete current
@@ -249,11 +314,79 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> DashboardRe
     )
 
 
+# --- Background warm cache -----------------------------------------------------
+# A scheduler refreshes the dashboard every 5 min so requests serve the warm result
+# INSTANTLY and never block on the ~6s MCP fan-out. Serve rules (same shape as the
+# claimable/recovery/lines warm caches): fresh → serve; stale → serve last-good AND
+# refresh in the background (still no block); cold (a window never fetched) → the
+# normal path once, then it's warm. The response is byte-identical either way.
+_DASHBOARD_WARM_TTL = 360.0  # 6 min serve window (> the 5-min refresh cadence)
+_DASHBOARD_WARM_MAX = 32  # cap distinct windows kept warm (memory bound)
+_dashboard_warm: dict[tuple, tuple[float, DashboardResponse]] = {}
+_dashboard_primary_key: tuple = (None, None)  # last-viewed window the scheduler keeps hot
+_dashboard_inflight: set[tuple] = set()       # windows currently being refreshed (dedupe)
+_dashboard_bg: set[asyncio.Task] = set()
+
+
+async def _refresh_dashboard(key: tuple) -> None:
+    """Recompute one window and store it warm. De-duplicated per key (a burst of stale
+    requests triggers ONE refresh) and concurrency-capped by the shared background-job
+    semaphore so it never contends with user requests. On failure the last-good warm
+    value is kept — never overwritten."""
+    async with live_support.inflight_guard(_dashboard_inflight, key) as acquired:
+        if not acquired:  # a refresh for this window is already running
+            return
+        async with live_support.background_job_sem:
+            try:
+                resp = await _fetch_live(*key)
+                _dashboard_warm[key] = (time.monotonic(), resp)
+                live_support.prune_cache(_dashboard_warm, _DASHBOARD_WARM_MAX)
+                logger.info("dashboard: warm refresh done for %s", key)
+            except Exception:  # noqa: BLE001 — keep last good, never fabricate
+                logger.exception("dashboard: warm refresh failed for %s; keeping last good", key)
+
+
+def _spawn_dashboard_refresh(key: tuple) -> None:
+    task = asyncio.create_task(_refresh_dashboard(key))
+    _dashboard_bg.add(task)
+    task.add_done_callback(_dashboard_bg.discard)
+
+
+async def _dashboard_scheduler() -> None:
+    logger.info("dashboard: warm scheduler started (every 300s)")
+    while True:
+        if live_support.settings.mcp_connect_url:
+            await _refresh_dashboard(_dashboard_primary_key)
+        await asyncio.sleep(300)  # 5 minutes
+
+
+def start_dashboard_scheduler() -> None:
+    """Launch the 5-min warm-refresh loop (called from app startup)."""
+    task = asyncio.create_task(_dashboard_scheduler())
+    _dashboard_bg.add(task)
+    task.add_done_callback(_dashboard_bg.discard)
+
+
 async def get_dashboard(date_from: str | None = None, date_to: str | None = None) -> DashboardResponse:
-    return await live_support.live_or_mock(
-        cache=_cache, key=(date_from, date_to), label="dashboard",
+    global _dashboard_primary_key
+    key = (date_from, date_to)
+    _dashboard_primary_key = key  # scheduler keeps whatever users are viewing hot
+    hit = _dashboard_warm.get(key)
+    if hit is not None:
+        ts, resp = hit
+        if (time.monotonic() - ts) < _DASHBOARD_WARM_TTL:
+            return resp  # instant — served from the warm cache
+        _spawn_dashboard_refresh(key)  # stale → refresh in background, serve last-good now
+        return resp
+    # Cold window (never warmed) → normal path (its own 60s cache); cache the live result warm.
+    resp = await live_support.live_or_mock(
+        cache=_cache, key=key, label="dashboard",
         fetch=lambda: _fetch_live(date_from, date_to), mock=_load_mock,
     )
+    if resp.source == "live":
+        _dashboard_warm[key] = (time.monotonic(), resp)
+        live_support.prune_cache(_dashboard_warm, _DASHBOARD_WARM_MAX)
+    return resp
 
 
 # --- Courier billing bar (sampled component breakdown) — separate endpoint ------

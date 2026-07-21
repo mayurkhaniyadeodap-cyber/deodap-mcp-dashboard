@@ -125,20 +125,78 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> SavingsResp
     )
 
 
+# --- Background warm cache -----------------------------------------------------
+# The build is SLOW (~1.4 min: 40× pincode_serviceability). A scheduler refreshes it
+# every 30 min so requests serve the warm result instantly. Serve rules: fresh →
+# serve; stale → serve last-good AND rebuild in the background (never blocks 1.4 min);
+# cold (a window never built) → build once, then it's warm. Response is identical.
+_SAVINGS_CACHE_MAX = 16  # cap distinct windows kept warm (memory bound)
+_savings_primary_key: tuple = (None, None)  # last-viewed window the scheduler keeps hot
+_savings_inflight: set[tuple] = set()        # windows currently being rebuilt (dedupe)
+_savings_bg: set[asyncio.Task] = set()
+
+
+async def _refresh_savings(key: tuple) -> None:
+    """Rebuild one window and store it warm. De-duplicated per key (a burst of stale
+    requests triggers ONE ~1.4-min rebuild) and concurrency-capped by the shared
+    background-job semaphore so it never contends with user requests. On failure the
+    last-good warm value is kept."""
+    async with live_support.inflight_guard(_savings_inflight, key) as acquired:
+        if not acquired:  # a rebuild for this window is already running
+            return
+        async with live_support.background_job_sem:
+            try:
+                result = await _fetch_live(*key)
+                _cache[key] = (time.monotonic(), result)
+                live_support.prune_cache(_cache, _SAVINGS_CACHE_MAX)
+                logger.info("savings: warm refresh done for %s", key)
+            except Exception:  # noqa: BLE001 — keep last good, never fabricate
+                logger.exception("savings: warm refresh failed for %s; keeping last good", key)
+
+
+def _spawn_savings_refresh(key: tuple) -> None:
+    task = asyncio.create_task(_refresh_savings(key))
+    _savings_bg.add(task)
+    task.add_done_callback(_savings_bg.discard)
+
+
+async def _savings_scheduler() -> None:
+    logger.info("savings: warm scheduler started (every 1800s)")
+    while True:
+        if live_support.settings.mcp_connect_url:
+            await _refresh_savings(_savings_primary_key)
+        await asyncio.sleep(1800)  # 30 minutes
+
+
+def start_savings_scheduler() -> None:
+    """Launch the 30-min warm-refresh loop (called from app startup)."""
+    task = asyncio.create_task(_savings_scheduler())
+    _savings_bg.add(task)
+    task.add_done_callback(_savings_bg.discard)
+
+
 async def get_savings_opportunity(
     date_from: str | None = None, date_to: str | None = None
 ) -> SavingsResponse:
+    global _savings_primary_key
     key = (date_from, date_to)
+    _savings_primary_key = key  # scheduler keeps whatever users are viewing hot
     now = time.monotonic()
     cached = _cache.get(key)
-    if cached is not None and (now - cached[0]) < _TTL_SECONDS:
-        return cached[1]
+    if cached is not None:
+        ts, resp = cached
+        if (now - ts) < _TTL_SECONDS:
+            return resp  # fresh — instant
+        _spawn_savings_refresh(key)  # stale → serve last-good now, rebuild in background
+        return resp
     if not live_support.settings.mcp_connect_url:
         logger.warning("savings: Ship MCP not configured — returning empty sample.")
         return _mock()
     try:
+        # Cold window (never built) → build once, then the scheduler keeps it warm.
         result = await _fetch_live(date_from, date_to)
         _cache[key] = (now, result)
+        live_support.prune_cache(_cache, _SAVINGS_CACHE_MAX)
         return result
     except Exception as exc:  # noqa: BLE001 — never break the page
         logger.warning("savings: Ship MCP unavailable (%s) — returning empty sample.", exc)

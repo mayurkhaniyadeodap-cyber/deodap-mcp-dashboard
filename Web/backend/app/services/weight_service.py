@@ -11,6 +11,8 @@ render is capped at 500. Per-AWB reconciliation cases do NOT exist → nothing
 per-AWB is faked.
 """
 
+import asyncio
+
 from app.schemas.weight import WeightBucket, WeightPoint, WeightResponse, WeightSummary
 from app.services import live_support, mcp_client
 from app.services.courier_service import _name_and_code
@@ -51,9 +53,13 @@ def _bucketize(weights: list[float]) -> list[WeightBucket]:
 async def _fetch_live(date_from: str | None, date_to: str | None) -> WeightResponse:
     args = live_support.date_args(date_from, date_to)
 
-    wr = live_support.parse_tool_json(
-        await mcp_client.call_tool("weight_reconciliation_summary", args)
+    # The reconciliation summary and the order sampling are independent → run them
+    # concurrently (was sequential: recon ≈8s THEN the sampling pages).
+    wr_r, (all_orders, total, is_full) = await asyncio.gather(
+        mcp_client.call_tool("weight_reconciliation_summary", args),
+        sample_orders(args),
     )
+    wr = live_support.parse_tool_json(wr_r)
     rows = int(wr.get("rows", 0) or 0)
     by_status = wr.get("by_status", {}) or {}
     summary = WeightSummary(
@@ -65,9 +71,8 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> WeightRespo
         disputed=int(by_status.get("Disputed", 0) or 0),
         has_recon=rows > 0,
     )
-
-    # Deduped sample across the whole population (list_orders is newest-first).
-    all_orders, total, is_full = await sample_orders(args)
+    # all_orders / total / is_full were fetched concurrently with the summary above
+    # (deduped sample across the whole population; list_orders is newest-first).
 
     usable: list[WeightPoint] = []
     weights: list[float] = []

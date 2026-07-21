@@ -17,8 +17,15 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routers import analytics, auth, bills, dashboard, export, mcp_debug, meta, profile, status, users
 from app.core.config import DEV_JWT_SECRET, settings
 from app.middleware.error_handler import register_error_handlers
+from app.middleware.perf import PerfMiddleware
 from app.middleware.request_id import RequestIDMiddleware
-from app.services import discrepancy_service, recovery_service, user_store
+from app.services import (
+    dashboard_service,
+    discrepancy_service,
+    recovery_service,
+    savings_service,
+    user_store,
+)
 
 logger = logging.getLogger("startup")
 
@@ -52,15 +59,22 @@ def _startup() -> None:
 async def _start_background_jobs() -> None:
     # Keep the slow enumerations OFF the request path: schedulers recompute them on
     # a fixed cadence and the endpoints always serve the warm result.
+    #   • dashboard       (~6s fan-out) — every 5 min
+    #   • savings         (~1.4 min)    — every 30 min
     #   • claimable-rate  (~260s) — every 30 min
     #   • dispute-lines   (enumeration per window+min_diff) — every 30 min
     #   • trend-recovery  (~27s)  — every 10 min
+    dashboard_service.start_dashboard_scheduler()
+    savings_service.start_savings_scheduler()
     discrepancy_service.start_claimable_scheduler()
     discrepancy_service.start_lines_scheduler()
     recovery_service.start_recovery_scheduler()
 
-# --- Middleware (order matters: request-id outermost so it wraps everything) ---
+# --- Middleware (add_middleware is LIFO: last-added is outermost) ---
+# PerfMiddleware added last → outermost, so it times the full request and installs
+# the per-request MCP stats contextvar before any downstream handler runs.
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(PerfMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

@@ -23,7 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courierStyle } from "@/config/couriers";
 import { useCouriers } from "@/services/couriers.service";
-import { useClaimableRate, useDashboard, useDashboardCourierBilling } from "@/services/dashboard.service";
+import { useDashboard, useDashboardCourierBilling, useDashboardRateDiff } from "@/services/dashboard.service";
 import { useSavingsOpportunity } from "@/services/discrepancies.service";
 import { useDateRange } from "@/store/dateRange.store";
 import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
@@ -53,7 +53,7 @@ const OTHERS_COLOR = "#64748b"; // slate — the merged "Others" donut slice
 export default function DashboardPage() {
   const { data, isLoading, isError, refetch } = useDashboard();
   const couriers = useCouriers();
-  const claimable = useClaimableRate();
+  const pendingRecon = useDashboardRateDiff();
   const billing = useDashboardCourierBilling();
   const savings = useSavingsOpportunity(); // Savings Identified KPI (slow, own skeleton)
 
@@ -99,7 +99,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
-      {/* KPI row — 4 fast KPIs + 2 slow KPIs (Claimable Rate Difference, Savings) each
+      {/* KPI row — 4 fast KPIs + 2 KPIs (Pending Reconciliation, Savings) each
           fetched from its own endpoint with its own skeleton. */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading || !data
@@ -111,47 +111,29 @@ export default function DashboardPage() {
           : data.kpis.map((kpi) => (
               <KpiCard key={kpi.key} kpi={kpi} source={badge} basis={basisLine(data.date_field)} />
             ))}
-        {/* Claimable Rate Difference — honest recoverable ₹ from reconciliation_disputes
-            (rows ≥ ₹50 AND actually priced). Served instantly from a warm background
-            refresh: "computing…" before the first run, and the last-good figure with a
-            "recalculating" note for a freshly-picked range. Excluded buckets shown so
-            nothing disappears (unpriced + sub-threshold noise). */}
-        {claimable.isLoading || !claimable.data ? (
+        {/* Pending Reconciliation — the live ₹ rate difference (invoiced − applied) on
+            unreconciled ("Disputed") lines for the window, from /dashboard/rate-diff
+            (reconciliation_summary group_by=status). Approved design (key
+            "pending_recon"): amount > 0 → ₹ + "Action Needed"; amount 0 → ₹0 + "No
+            Pending Reconciliation"; only N/A when the MCP is not live. */}
+        {pendingRecon.isLoading || !pendingRecon.data ? (
           <Card className="h-[150px] animate-pulse" />
-        ) : claimable.data.computing ? (
-          <Card className="flex h-[150px] flex-col justify-center gap-2 p-5">
-            <span className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Claimable Rate Difference
-            </span>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="size-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-              Computing… (first calculation in progress)
-            </div>
-          </Card>
         ) : (
           <KpiCard
             kpi={{
-              key: "rate_diff",
-              label: "Claimable Rate Difference",
-              value: claimable.data.claimable_amount,
+              key: "pending_recon",
+              label: "Pending Reconciliation",
+              value: pendingRecon.data.kpi.value,
               format: "currency",
               delta: 0,
               delta_tone: "neutral",
               has_delta: false,
-              // Claimable keeps its explanatory ₹0 (subtitle spells out "0 priced rows")
-              // — a genuinely computed value, not "unavailable".
-              unavailable: false,
-              subtitle:
-                (claimable.data.maturing
-                  ? "This window is still reconciling — most lines aren't reconciled yet, so this is a floor, not the final figure. "
-                  : "") +
-                (claimable.data.recalculating ? "Recalculating for this range — showing last computed figure. " : "") +
-                `${claimable.data.count.toLocaleString("en-IN")} priced rows ≥ ₹${claimable.data.threshold}. ` +
-                `Excluded — unpriced (no applied rate) ${formatCurrencyINRCompact(claimable.data.excluded_no_applied_rate)}` +
-                ` · below ₹${claimable.data.threshold} ${formatCurrencyINRCompact(claimable.data.excluded_below_threshold)}`,
+              // N/A only when the value is NOT live (MCP unavailable / mock) — never
+              // display a non-live or hardcoded figure.
+              unavailable: pendingRecon.data.source !== "live",
             }}
-            source={claimable.data.source === "live" ? "live" : "sample"}
-            basis={basisLine(claimable.data.date_field)}
+            source={pendingRecon.data.source === "live" ? "live" : "sample"}
+            basis={basisLine(pendingRecon.data.date_field)}
           />
         )}
         {/* Savings Identified — applied vs cheapest serviceable (pincode_serviceability sample) */}
