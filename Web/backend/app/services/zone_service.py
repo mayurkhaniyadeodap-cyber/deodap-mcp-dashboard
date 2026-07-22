@@ -51,6 +51,54 @@ _ALIAS = {
     "JK": "Jammu And Kashmir", "JAMMU AND KASHMIR": "Jammu And Kashmir",
     "LA": "Ladakh", "LD": "Lakshadweep", "PY": "Puducherry", "PONDICHERRY": "Puducherry",
     "DN": "Dadra And Nagar Haveli And Daman And Diu", "DD": "Dadra And Nagar Haveli And Daman And Diu",
+    # --- Extended aliases: verified genuine state-name variants recovered from the
+    # "Unknown" bucket (misspellings, missing letters, legacy UT names, ", India"
+    # suffixes). Keys are the _canon_state normalized-UPPER form (non-alpha stripped,
+    # & -> AND, spaces collapsed). ONLY real state variants — never cities/garbage
+    # (Mumbai, Hyderabad, pincodes, "School" … deliberately stay Unknown). ---
+    "MAHARASTRA": "Maharashtra", "MAHARASTHRA": "Maharashtra", "MAHARASHTR": "Maharashtra",
+    "MAHARASHTRAA": "Maharashtra", "MAHARSHTRA": "Maharashtra", "MAARASTRA": "Maharashtra",
+    "MAHHARASTRA": "Maharashtra", "MAHARATRA": "Maharashtra", "MAHASTRA": "Maharashtra",
+    "MAHARRASHTRA": "Maharashtra", "MAHARAHTRA": "Maharashtra", "MAHRASHTRA": "Maharashtra",
+    "MAHARAEHTRA": "Maharashtra", "MAHARAHSTRA": "Maharashtra", "MAHRASTRA": "Maharashtra",
+    "KERELA": "Kerala", "KERLA": "Kerala", "KERAL": "Kerala", "KERLALA": "Kerala", "KARALA": "Kerala",
+    "KARNATAK": "Karnataka", "KARNATKA": "Karnataka", "KARNATAKHA": "Karnataka",
+    "UTTARPRADESH": "Uttar Pradesh", "UTTER PRADESH": "Uttar Pradesh", "UTTAR PARDESH": "Uttar Pradesh",
+    "UTTAAR PRADESH": "Uttar Pradesh", "UTTARPADESH": "Uttar Pradesh", "UTTAR PRADES": "Uttar Pradesh",
+    "UTTERPRADESH": "Uttar Pradesh", "UTTERPARDESH": "Uttar Pradesh", "U P": "Uttar Pradesh",
+    "TTAR PRADESH": "Uttar Pradesh", "UTTAR PRADESH INDIA": "Uttar Pradesh",
+    "UTTRAKHAND": "Uttarakhand", "UTRAKHAND": "Uttarakhand", "UTTRA KHAND": "Uttarakhand",
+    "WEST BANGAL": "West Bengal", "WESTBANGAL": "West Bengal", "WESTBENGAL": "West Bengal",
+    "WEST BAANGAL": "West Bengal", "WES BANGAL": "West Bengal", "WEST BENGA": "West Bengal",
+    "WEST BENGALL": "West Bengal", "EST BENGAL": "West Bengal", "WEST BENGAL INDIA": "West Bengal",
+    "MADHYAPRADESH": "Madhya Pradesh", "MADHYPRADHESH": "Madhya Pradesh", "MADHYAPRAESH": "Madhya Pradesh",
+    "MADHYA PRADDESH": "Madhya Pradesh", "MADHYA PREADESH": "Madhya Pradesh", "MADYAPRADESH": "Madhya Pradesh",
+    "MADHYA PARDESH": "Madhya Pradesh",
+    "PANJAB": "Punjab",
+    "TELAGANA": "Telangana", "TELEGHANA": "Telangana", "ELANGANA": "Telangana",
+    "TELANGANAQ": "Telangana", "TELANGANA TG": "Telangana",
+    "CHATTISGARH": "Chhattisgarh", "CHHATISGARDH": "Chhattisgarh", "CHHATISHGARDH": "Chhattisgarh",
+    "CHATISGARH": "Chhattisgarh", "CHAATTISGARH": "Chhattisgarh", "CHHATTISHGARH": "Chhattisgarh",
+    "CHANDIGARDH": "Chandigarh",
+    "RAJASTHA": "Rajasthan", "RAJSTHAN": "Rajasthan", "RAJISTHAN": "Rajasthan",
+    "RAJASHTHAN": "Rajasthan", "RAJESTHAN": "Rajasthan", "RAJASTHAN INDIA": "Rajasthan",
+    "HARIYANA": "Haryana", "HARAYANA": "Haryana", "HARYAN": "Haryana",
+    "BIHAR INDIA": "Bihar", "BIHAR X": "Bihar",
+    "AASAM": "Assam", "ODISA": "Odisha", "ODISHA INDIA": "Odisha",
+    "JHARKAND": "Jharkhand", "JHARKHAND X": "Jharkhand", "MEGHALYA": "Meghalaya",
+    "HIMACHALPRADESH": "Himachal Pradesh", "HIMANCHALPRADESH": "Himachal Pradesh",
+    "HIMANCHAL PRADESH": "Himachal Pradesh", "HIMACHAL PRDESH": "Himachal Pradesh",
+    "JAMMU KASHMIR": "Jammu And Kashmir", "J AND K": "Jammu And Kashmir",
+    "AMMU AND KASHMIR": "Jammu And Kashmir", "J AND KASHMIR": "Jammu And Kashmir",
+    "ANDHRA PRADSH": "Andhra Pradesh", "NDHRA PRADESH": "Andhra Pradesh",
+    "TAMILNARU": "Tamil Nadu", "TMIL NADU": "Tamil Nadu", "AMIL NADU": "Tamil Nadu",
+    "TAMILNAADU": "Tamil Nadu", "TAMIL NADU INDIA": "Tamil Nadu",
+    "DEHLI": "Delhi", "NEW DEHLI": "Delhi", "DELHI DELHI": "Delhi", "NEW DELHI DELHI": "Delhi",
+    "UJARAT": "Gujarat", "SIKLKIM": "Sikkim",
+    "ANDAMAN ANDAMAN AND NICOBAR ISLANDS": "Andaman And Nicobar Islands",
+    "DADRA AND NAGAR HAVELI": "Dadra And Nagar Haveli And Daman And Diu",
+    "DAMAN AND DIU": "Dadra And Nagar Haveli And Daman And Diu",
+    "DADRA AND NAGAR": "Dadra And Nagar Haveli And Daman And Diu",
 }
 
 
@@ -102,18 +150,30 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> ZonesRespon
         d["rto"] += float(b.get("rto_cost", 0) or 0)
         d["total"] += float(b.get("total_cost", 0) or 0)
 
+    invalid_days: list[str] = []  # areas whose MCP avg_delivery_days is < 0 (invalid)
     for a in geo.get("areas", []) or []:
         c = _canon_state(a.get("area"))
         if c is None:
             unmapped.add(str(a.get("area")))
         key = c or "Unknown"
         o = int(a.get("orders", 0) or 0)
-        d = geo_map.setdefault(key, {"orders": 0, "delivered": 0, "rto": 0, "ndr": 0, "daysw": 0.0})
+        d = geo_map.setdefault(key, {"orders": 0, "delivered": 0, "rto": 0, "ndr": 0, "daysw": 0.0, "days_orders": 0})
         d["orders"] += o
         d["delivered"] += int(a.get("delivered", 0) or 0)
         d["rto"] += int(a.get("rto", 0) or 0)
         d["ndr"] += int(a.get("ndr", 0) or 0)
-        d["daysw"] += float(a.get("avg_delivery_days", 0) or 0) * o
+        # Avg-days weight: a delivery time cannot be negative. geo_performance can emit
+        # an invalid negative avg_delivery_days for an area (observed: raw "Jharkhand"
+        # = -293.1 → a source/MCP data error). Exclude such invalid rows from the
+        # days-weighted mean (its own `days_orders` denominator) so one bad value can't
+        # poison the state's Avg Days. NOT abs()-clamped, NOT hidden (logged below).
+        # Orders / delivery-RTO-NDR rates keep the FULL area orders (unchanged).
+        avg_days = float(a.get("avg_delivery_days", 0) or 0)
+        if avg_days >= 0:
+            d["daysw"] += avg_days * o
+            d["days_orders"] += o
+        else:
+            invalid_days.append(str(a.get("area")))
 
     states: list[StateRow] = []
     unjoined: list[str] = []
@@ -134,7 +194,7 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> ZonesRespon
             delivery_rate_pct=round(g["delivered"] / g_orders * 100, 2) if g and g_orders else 0.0,
             rto_rate_pct=round(g["rto"] / g_orders * 100, 2) if g and g_orders else 0.0,
             ndr_rate_pct=round(g["ndr"] / g_orders * 100, 2) if g and g_orders else 0.0,
-            avg_delivery_days=round(g["daysw"] / g_orders, 2) if g and g_orders else 0.0,
+            avg_delivery_days=round(g["daysw"] / g["days_orders"], 2) if g and g["days_orders"] else 0.0,
             joined=joined,
         ))
         if not joined and key != "Unknown":
@@ -147,6 +207,12 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> ZonesRespon
             "zones: %d state(s) present in only one tool (blank metrics): %s | %d raw label(s) "
             "unmapped→Unknown (e.g. %s)",
             len(unjoined), sorted(unjoined), len(unmapped), sorted(unmapped)[:8],
+        )
+    if invalid_days:
+        logger.warning(
+            "zones: %d geo area(s) had an INVALID negative avg_delivery_days from the MCP "
+            "(excluded from Avg Days, not clamped): %s",
+            len(invalid_days), sorted(invalid_days),
         )
 
     return ZonesResponse(

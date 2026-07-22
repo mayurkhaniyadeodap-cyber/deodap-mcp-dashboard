@@ -211,4 +211,3 @@ async def list_couriers(
         if settings.use_mock_fallback:
             return _load_mock_couriers()
         return []
-        return _load_mock_couriers()

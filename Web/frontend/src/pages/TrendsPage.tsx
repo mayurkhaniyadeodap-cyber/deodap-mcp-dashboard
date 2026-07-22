@@ -1,7 +1,10 @@
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
@@ -57,33 +60,27 @@ export default function TrendsPage() {
             <span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
             Computing the per-month series… (first calculation in progress)
           </div>
+        ) : (rec?.points?.length ?? 0) === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            No rate difference identified for this range yet.
+          </div>
         ) : (
+          // Bar chart reads clearly even with low / single-point data (a lone month is
+          // a visible bar, where an area/line was near-empty). Same data source
+          // (rec.points), same dataKey/label, ₹ formatting. Partial/gap months render
+          // as faded bars (they were hollow dots before).
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={rec?.points ?? []} margin={{ left: 8, right: 8 }}>
-              <defs>
-                <linearGradient id="recFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={CHART_COLORS.amber} stopOpacity={0.4} />
-                  <stop offset="100%" stopColor={CHART_COLORS.amber} stopOpacity={0} />
-                </linearGradient>
-              </defs>
+            <BarChart data={rec?.points ?? []} margin={{ left: 8, right: 8 }}>
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="month" stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} />
               <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
-              <Tooltip content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
-              <Area
-                type="monotone"
-                dataKey="cumulative"
-                name="Identified (cumulative)"
-                stroke={CHART_COLORS.amber}
-                strokeWidth={2}
-                fill="url(#recFill)"
-                dot={(props) => {
-                  const p = rec?.points?.[props.index];
-                  const hollow = p?.partial || p?.gap;
-                  return <circle key={props.index} cx={props.cx} cy={props.cy} r={hollow ? 4 : 3} fill={hollow ? "transparent" : CHART_COLORS.amber} stroke={CHART_COLORS.amber} strokeWidth={hollow ? 2 : 0} />;
-                }}
-              />
-            </AreaChart>
+              <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
+              <Bar dataKey="cumulative" name="Identified (cumulative)" fill={CHART_COLORS.amber} radius={[4, 4, 0, 0]} maxBarSize={72}>
+                {(rec?.points ?? []).map((p, i) => (
+                  <Cell key={i} fill={CHART_COLORS.amber} fillOpacity={p.partial || p.gap ? 0.4 : 1} />
+                ))}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         )}
       </ChartCard>
@@ -94,7 +91,7 @@ export default function TrendsPage() {
       )}
       {rec && rec.points.some((p) => p.partial || p.gap) && (
         <p className="-mt-4 text-xs text-muted-foreground">
-          Hollow markers = partial/incomplete months (reconciliation lags — the curve flattens because data is still arriving, not because it's resolved).
+          Faded bars = partial/incomplete months (reconciliation lags — those months flatten because data is still arriving, not because they're resolved).
         </p>
       )}
 
@@ -149,9 +146,23 @@ export default function TrendsPage() {
             <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
             <Tooltip content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            {couriers.map((c, i) => (
-              <Line key={c} type="monotone" dataKey={c} stroke={CHART_SERIES[i % CHART_SERIES.length]} strokeWidth={1.75} dot={false} />
-            ))}
+            {/* One smooth line per courier — same data (byMonth) & keys (couriers).
+                Markers on each point; names preserved for tooltip + legend. */}
+            {couriers.map((c, i) => {
+              const color = CHART_SERIES[i % CHART_SERIES.length];
+              return (
+                <Line
+                  key={c}
+                  type="monotone"
+                  dataKey={c}
+                  name={c}
+                  stroke={color}
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: color, strokeWidth: 0 }}
+                  activeDot={{ r: 5 }}
+                />
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>

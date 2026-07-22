@@ -6,7 +6,7 @@ GET with no query params). Each delegates to its service (the only data source).
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DateRange, date_range_params, get_current_user
-from app.schemas.cod import CodPendingResponse, CodResponse
+from app.schemas.cod import CodIntelligenceResponse, CodPendingResponse, CodResponse
 from app.schemas.couriers import Courier
 from app.schemas.discrepancies import DiscrepancyResponse
 from app.schemas.dispute_lines import DisputeInvoicesResponse, DisputeLinesResponse
@@ -14,6 +14,7 @@ from app.schemas.reconciliation import ClaimableRateResponse, ReconciliationResp
 from app.schemas.recovery import RecoveryResponse
 from app.schemas.savings import SavingsResponse
 from app.schemas.settings import SettingsResponse
+from app.schemas.sla import SlaResponse
 from app.schemas.trend import TrendResponse
 from app.schemas.weight import WeightResponse
 from app.schemas.zones import ZonesResponse
@@ -24,6 +25,7 @@ from app.services import (
     recovery_service,
     savings_service,
     settings_service,
+    sla_service,
     trend_service,
     weight_service,
     zone_service,
@@ -111,6 +113,13 @@ async def get_cod_pending(dates: DateRange = Depends(date_range_params)) -> CodP
     return await cod_service.get_cod_pending(date_from=dates.date_from, date_to=dates.date_to)
 
 
+@router.get("/cod/intelligence", response_model=CodIntelligenceResponse, tags=["cod"])
+async def get_cod_intelligence(dates: DateRange = Depends(date_range_params)) -> CodIntelligenceResponse:
+    # COD Intelligence KPIs (order_analytics payment_type + cod_remittance_aging).
+    # Own 60s cache; live or honest 'unavailable' (never fabricated).
+    return await cod_service.get_cod_intelligence(date_from=dates.date_from, date_to=dates.date_to)
+
+
 @router.get("/zones", response_model=ZonesResponse, tags=["zones"])
 async def get_zones(dates: DateRange = Depends(date_range_params)) -> ZonesResponse:
     return await zone_service.get_zones(date_from=dates.date_from, date_to=dates.date_to)
@@ -131,6 +140,13 @@ async def get_trend_recovery(dates: DateRange = Depends(date_range_params)) -> R
     # SLOW (7× weight_reconciliation_summary ≈ 27s); own 10-min cache, separate
     # endpoint so the fast Trend charts render immediately.
     return await recovery_service.get_recovery(date_from=dates.date_from, date_to=dates.date_to)
+
+
+@router.get("/sla-performance", response_model=SlaResponse, tags=["sla"])
+async def get_sla_performance(dates: DateRange = Depends(date_range_params)) -> SlaResponse:
+    # Delivery SLA (sla_performance): on-time vs late vs promised EDD + overdue-in-transit.
+    # Own 60s cache; live or honest 'unavailable' (never fabricated).
+    return await sla_service.get_sla(date_from=dates.date_from, date_to=dates.date_to)
 
 
 @router.get("/settings", response_model=SettingsResponse, tags=["settings"])

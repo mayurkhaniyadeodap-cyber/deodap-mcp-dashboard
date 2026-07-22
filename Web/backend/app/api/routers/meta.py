@@ -12,53 +12,18 @@ from fastapi import APIRouter
 
 router = APIRouter(tags=["_meta"])
 
-# Panel provenance. "live" = served from the Ship MCP; "sample" = mock data kept
-# because the MCP audit confirmed no shipment-/invoice-level source exists yet.
+# Panel provenance still consumed by the frontend. Only ONE entry remains read by any
+# component — `couriers.comparison` (CouriersPage, DiscrepanciesPage RTO panel, and
+# CourierSettingsSection all do `useSourceMeta().data?.couriers?.comparison`).
+#
+# Every other page now derives its Live/Sample/Unavailable badge from the per-response
+# `source` field returned by its own endpoint (dashboard, cod, zones, weight, trend,
+# discrepancies, bills), so the previous static entries for those pages were obsolete
+# and unread — they have been removed. The endpoint's shape (dict[str, dict[str, str]])
+# is unchanged, and every consumer uses optional chaining, so trimming is safe.
 _SOURCES: dict[str, dict[str, str]] = {
-    "dashboard": {
-        "kpi_total_billing": "live",
-        "kpi_total_shipments": "live",
-        "kpi_average_cost": "live",
-        "kpi_cod": "live",
-        "kpi_pending_reconciliation": "sample",
-        "kpi_savings": "sample",
-        "courier_chart": "live",
-        "shipment_distribution": "live",
-        "monthly_billing": "sample",
-        "zone_chart": "sample",
-        "recent_activity": "sample",
-        "recent_bills": "sample",
-    },
     "couriers": {
         "comparison": "live",
-    },
-    "bills": {
-        "table": "live",
-    },
-    "cod": {
-        "summary": "live",
-        "weekly_chart": "sample",
-        "courier_table": "sample",
-    },
-    "discrepancies": {
-        "kpis": "live",
-        "rto": "live",
-        "weight_cases": "sample",
-        "overcharging": "sample",
-        "reconciled": "sample",
-    },
-    "zones": {
-        "state_summary": "live",
-        "heatmap": "sample",
-    },
-    "weight": {
-        "kpis": "live",
-        "scatter": "sample",
-        "histogram": "sample",
-    },
-    "trend": {
-        "monthly": "live",
-        "courier_breakdown": "sample",
     },
 }
 

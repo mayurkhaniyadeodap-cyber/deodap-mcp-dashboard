@@ -11,6 +11,7 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
+import { Info } from "lucide-react";
 import { ChartCard } from "@/components/shared/ChartCard";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { PageError } from "@/components/shared/PageError";
@@ -54,7 +55,14 @@ export default function WeightPage() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard label="Reconciliation Lines" value={s ? formatNumber(s.reconciliation_lines) : "—"} loading={isLoading} source={badge} />
           <StatCard label="Weight-Overcharged Lines" value={s ? formatNumber(s.weight_overcharged) : "—"} loading={isLoading} tone="warning" source={badge} />
-          <StatCard label="Extra Weight" value={s ? `${formatNumber(Math.round(s.weight_diff_kg))} kg` : "—"} loading={isLoading} tone="warning" source={badge} />
+          <StatCard
+            label="Net Weight Difference"
+            info="Net difference between courier invoiced weight and applied weight from reconciliation records. Positive values indicate the courier invoiced more weight than was applied."
+            value={s ? `${formatNumber(Math.round(s.weight_diff_kg))} kg` : "—"}
+            loading={isLoading}
+            tone="warning"
+            source={badge}
+          />
           <StatCard label="Forward Rate Difference to Investigate" value={s ? formatCurrencyINR(s.fwd_rate_diff) : "—"} loading={isLoading} tone="danger" source={badge} />
         </div>
       )}
@@ -121,23 +129,44 @@ export default function WeightPage() {
 
 const TONE = { default: "text-foreground", warning: "text-warning", danger: "text-destructive" } as const;
 
+/** Small hover/focus info tooltip (theme-consistent with ChartTooltip). Anchored to
+ *  the left of the icon so it never overflows the narrow stat card. */
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex shrink-0">
+      <Info className="size-3.5 cursor-help text-muted-foreground/70" tabIndex={0} aria-label={text} />
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-64 rounded-lg border border-[#334155] bg-[#1a2236] p-2.5 text-xs leading-snug text-[#f1f5f9] opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function StatCard({
   label,
   value,
   loading,
   tone = "default",
   source,
+  info,
 }: {
   label: string;
   value: string;
   loading: boolean;
   tone?: keyof typeof TONE;
   source?: SourceStatus;
+  info?: string;
 }) {
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-2">
-        <div className="text-sm text-muted-foreground">{label}</div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-muted-foreground">{label}</span>
+          {info ? <InfoTip text={info} /> : null}
+        </div>
         <SourceBadge status={source} />
       </div>
       {loading ? (

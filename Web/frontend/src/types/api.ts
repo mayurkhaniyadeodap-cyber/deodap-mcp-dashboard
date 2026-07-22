@@ -57,6 +57,11 @@ export type CodCourier = Schemas["CodCourier"];
 export type CodPendingResponse = Schemas["CodPendingResponse"];
 export type CodPendingCourier = Schemas["CodPendingCourier"];
 export type CodWeekly = Schemas["CodWeekly"];
+export type CodIntelligenceResponse = Schemas["CodIntelligenceResponse"];
+export type CodPaymentSplit = Schemas["CodPaymentSplit"];
+export type CodPaymentEconomics = Schemas["CodPaymentEconomics"];
+export type CodDimensionRow = Schemas["CodDimensionRow"];
+export type CodUnavailableMetric = Schemas["CodUnavailableMetric"];
 
 // --- Trend ---
 export type TrendResponse = Schemas["TrendResponse"];
@@ -69,6 +74,9 @@ export type RecoveryPoint = Schemas["RecoveryPoint"];
 // --- Settings ---
 export type SettingsResponse = Schemas["SettingsResponse"];
 export type Preferences = Schemas["Preferences"];
+
+// --- Delivery SLA performance ---
+export type SlaResponse = Schemas["SlaResponse"];
 
 // --- Discrepancies ---
 export type DiscrepancyResponse = Schemas["DiscrepancyResponse"];

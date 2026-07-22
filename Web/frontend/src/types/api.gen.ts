@@ -296,6 +296,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cod/intelligence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cod Intelligence */
+        get: operations["get_cod_intelligence_api_cod_intelligence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/zones": {
         parameters: {
             query?: never;
@@ -356,6 +373,23 @@ export interface paths {
         };
         /** Get Trend Recovery */
         get: operations["get_trend_recovery_api_trend_recovery_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sla-performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sla Performance */
+        get: operations["get_sla_performance_api_sla_performance_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -697,6 +731,105 @@ export interface components {
             cod_value: number;
         };
         /**
+         * CodDimensionRow
+         * @description One warehouse/seller row (order_analytics group_by=warehouse|seller). COD
+         *     intensity = the row's own cod_value / order_value (single row, single tool).
+         */
+        CodDimensionRow: {
+            /** Group */
+            group: string;
+            /** Orders */
+            orders: number;
+            /** Order Value */
+            order_value: number;
+            /** Cod Value */
+            cod_value: number;
+            /** Cod Intensity Pct */
+            cod_intensity_pct: number;
+        };
+        /**
+         * CodIntelligenceResponse
+         * @description Additive COD-intelligence layer. All KPIs are live MCP fields or ratios of
+         *     live fields from a SINGLE tool (never cross-tool, never fabricated).
+         */
+        CodIntelligenceResponse: {
+            /**
+             * Kpis
+             * @default []
+             */
+            kpis: components["schemas"]["Kpi"][];
+            /**
+             * Payment Split
+             * @default []
+             */
+            payment_split: components["schemas"]["CodPaymentSplit"][];
+            /**
+             * Unit Economics
+             * @default []
+             */
+            unit_economics: components["schemas"]["CodPaymentEconomics"][];
+            /**
+             * Warehouse Cod
+             * @default []
+             */
+            warehouse_cod: components["schemas"]["CodDimensionRow"][];
+            /**
+             * Seller Cod
+             * @default []
+             */
+            seller_cod: components["schemas"]["CodDimensionRow"][];
+            /**
+             * Unavailable
+             * @default []
+             */
+            unavailable: components["schemas"]["CodUnavailableMetric"][];
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock" | "unavailable";
+            /**
+             * Date Field
+             * @default order_date
+             */
+            date_field: string;
+        };
+        /**
+         * CodPaymentEconomics
+         * @description Per-payment-type unit economics. Cost fields are the shipping_cost_summary
+         *     (group_by=payment_type) live values; avg_order_value is order_analytics
+         *     order_value / orders for the SAME payment type (never blended).
+         */
+        CodPaymentEconomics: {
+            /** Payment Type */
+            payment_type: string;
+            /** Orders */
+            orders: number;
+            /** Avg Order Value */
+            avg_order_value: number;
+            /** Avg Shipping Cost */
+            avg_shipping_cost: number;
+            /** Fwd Cost */
+            fwd_cost: number;
+            /** Rto Cost */
+            rto_cost: number;
+            /** Total Cost */
+            total_cost: number;
+        };
+        /**
+         * CodPaymentSplit
+         * @description COD vs Prepaid order/value split (order_analytics group_by=payment_type).
+         */
+        CodPaymentSplit: {
+            /** Payment Type */
+            payment_type: string;
+            /** Orders */
+            orders: number;
+            /** Order Value */
+            order_value: number;
+        };
+        /**
          * CodPendingCourier
          * @description Per-courier COD aging (cod_remittance_aging group_by=courier), joined with
          *     order_analytics for the COD amount.
@@ -753,6 +886,18 @@ export interface components {
              * @default order_date
              */
             date_field: string;
+        };
+        /**
+         * CodUnavailableMetric
+         * @description An intelligence metric that CANNOT be derived from the MCP, with the exact
+         *     missing capability. Surfaced verbatim so the UI can show 'Not available from
+         *     MCP' honestly instead of fabricating a value.
+         */
+        CodUnavailableMetric: {
+            /** Metric */
+            metric: string;
+            /** Reason */
+            reason: string;
         };
         /**
          * CodWeekly
@@ -1204,6 +1349,12 @@ export interface components {
             page_size: number;
             /** Total Pages */
             total_pages: number;
+            /**
+             * Source
+             * @default live
+             * @enum {string}
+             */
+            source: "live" | "sample" | "unavailable";
         };
         /**
          * PendingReconciliationResponse
@@ -1458,6 +1609,50 @@ export interface components {
         /** SettingsResponse */
         SettingsResponse: {
             preferences: components["schemas"]["Preferences"];
+        };
+        /** SlaResponse */
+        SlaResponse: {
+            /**
+             * Delivered
+             * @default 0
+             */
+            delivered: number;
+            /**
+             * On Time
+             * @default 0
+             */
+            on_time: number;
+            /**
+             * Late
+             * @default 0
+             */
+            late: number;
+            /**
+             * On Time Pct
+             * @default 0
+             */
+            on_time_pct: number;
+            /**
+             * Avg Delay Days
+             * @default 0
+             */
+            avg_delay_days: number;
+            /**
+             * Overdue In Transit
+             * @default 0
+             */
+            overdue_in_transit: number;
+            /**
+             * Source
+             * @default mock
+             * @enum {string}
+             */
+            source: "live" | "mock" | "unavailable";
+            /**
+             * Date Field
+             * @default order_date
+             */
+            date_field: string;
         };
         /** StateCostRow */
         StateCostRow: {
@@ -2350,6 +2545,40 @@ export interface operations {
             };
         };
     };
+    get_cod_intelligence_api_cod_intelligence_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodIntelligenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_zones_api_zones_get: {
         parameters: {
             query?: {
@@ -2473,6 +2702,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecoveryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sla_performance_api_sla_performance_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlaResponse"];
                 };
             };
             /** @description Validation Error */

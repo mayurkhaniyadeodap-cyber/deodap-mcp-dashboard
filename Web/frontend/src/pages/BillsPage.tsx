@@ -10,7 +10,6 @@ import { Select } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/useDebounce";
 import type { SortState } from "@/hooks/useTable";
 import { useBills } from "@/services/bills.service";
-import { useSourceMeta } from "@/services/meta.service";
 import type { Bill, BillStatus } from "@/types/api";
 import { formatCurrencyINR, formatDateIST } from "@/utils/format";
 import { BILL_STATUS_META, BILL_STATUSES } from "@/utils/status";
@@ -48,7 +47,6 @@ export default function BillsPage() {
 
   const debouncedSearch = useDebounce(search, 300);
   const { data, isLoading } = useBills({ search: debouncedSearch, status, sort, page, pageSize: PAGE_SIZE });
-  const billsSrc = useSourceMeta().data?.bills;
 
   // Changing any filter resets to page 1.
   const onSearchChange = (v: string) => {
@@ -76,7 +74,10 @@ export default function BillsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <BillingTabs />
-        <SourceBadge status={billsSrc?.table} />
+        {/* Badge reflects the ACTUAL data source of this response: LIVE for the live
+            list_orders listing, Sample for the search/sort demo-data path (the MCP
+            can't search/sort), Unavailable on a live-fetch failure. Never mislabeled. */}
+        <SourceBadge status={data?.source} />
       </div>
       <FilterBar onReset={hasFilters ? onReset : undefined}>
         <SearchInput

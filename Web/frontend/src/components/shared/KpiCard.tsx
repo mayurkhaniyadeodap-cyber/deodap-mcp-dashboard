@@ -40,6 +40,14 @@ const KPI_META: Record<string, { accent: Accent; icon: LucideIcon }> = {
   cod_records: { accent: "cyan", icon: Package },
   pending: { accent: "red", icon: Clock },
   recon_rate: { accent: "cyan", icon: Percent },
+  // COD Intelligence
+  cod_share: { accent: "amber", icon: Percent },
+  avg_cod_value: { accent: "blue", icon: Banknote },
+  remittance_rate: { accent: "green", icon: Percent },
+  overdue_rate: { accent: "red", icon: Percent },
+  overdue_amount: { accent: "red", icon: AlertTriangle },
+  outstanding_cod: { accent: "amber", icon: Wallet },
+  settlement_tat: { accent: "purple", icon: Clock },
   // Discrepancies
   flagged: { accent: "red", icon: AlertTriangle },
   weight_disc: { accent: "purple", icon: Scale },

@@ -56,3 +56,60 @@ class CodPendingResponse(BaseModel):
     rows: list[CodPendingCourier] = []
     source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"
+
+
+# --- COD Intelligence (additive; the existing CodResponse is untouched) --------
+class CodPaymentSplit(BaseModel):
+    """COD vs Prepaid order/value split (order_analytics group_by=payment_type)."""
+
+    payment_type: str  # "COD" | "Prepaid"
+    orders: int
+    order_value: float
+
+
+class CodUnavailableMetric(BaseModel):
+    """An intelligence metric that CANNOT be derived from the MCP, with the exact
+    missing capability. Surfaced verbatim so the UI can show 'Not available from
+    MCP' honestly instead of fabricating a value."""
+
+    metric: str
+    reason: str
+
+
+class CodPaymentEconomics(BaseModel):
+    """Per-payment-type unit economics. Cost fields are the shipping_cost_summary
+    (group_by=payment_type) live values; avg_order_value is order_analytics
+    order_value / orders for the SAME payment type (never blended)."""
+
+    payment_type: str  # "COD" | "Prepaid"
+    orders: int
+    avg_order_value: float  # order_analytics: order_value / orders
+    avg_shipping_cost: float  # shipping_cost_summary.avg_cost
+    fwd_cost: float  # shipping_cost_summary.fwd_cost
+    rto_cost: float  # shipping_cost_summary.rto_cost
+    total_cost: float  # shipping_cost_summary.total_cost
+
+
+class CodDimensionRow(BaseModel):
+    """One warehouse/seller row (order_analytics group_by=warehouse|seller). COD
+    intensity = the row's own cod_value / order_value (single row, single tool)."""
+
+    group: str
+    orders: int
+    order_value: float
+    cod_value: float
+    cod_intensity_pct: float  # cod_value / order_value * 100
+
+
+class CodIntelligenceResponse(BaseModel):
+    """Additive COD-intelligence layer. All KPIs are live MCP fields or ratios of
+    live fields from a SINGLE tool (never cross-tool, never fabricated)."""
+
+    kpis: list[Kpi] = []
+    payment_split: list[CodPaymentSplit] = []
+    unit_economics: list[CodPaymentEconomics] = []
+    warehouse_cod: list[CodDimensionRow] = []
+    seller_cod: list[CodDimensionRow] = []
+    unavailable: list[CodUnavailableMetric] = []
+    source: Literal["live", "mock", "unavailable"] = "mock"
+    date_field: str = "order_date"

@@ -50,7 +50,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // "Dispute Lines" nav entry temporarily removed (page/route/endpoints/scheduler
       // all still live — restore this line to re-enable it in the sidebar):
       // { label: "Dispute Lines", path: "/dispute-lines", icon: Receipt },
-      { label: "COD Reconciliation", path: "/cod", icon: Wallet },
+      { label: "COD Intelligence", path: "/cod", icon: Wallet },
     ],
   },
   {

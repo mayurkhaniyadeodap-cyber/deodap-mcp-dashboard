@@ -71,7 +71,10 @@ def _map_order(o: dict) -> dict:
     }
 
 
-def _mock_page(*, search, status, sort, page, page_size, date_from, date_to) -> Page[Bill]:
+def _mock_page(*, search, status, sort, page, page_size, date_from, date_to,
+               source: str = "sample") -> Page[Bill]:
+    """Filtered/sorted/paged view over committed demo bills. ALWAYS labeled
+    source="sample" (default) so it can never be shown under a LIVE badge."""
     items = _all_bills()
     if date_from:
         items = [b for b in items if b.date.isoformat() >= date_from]
@@ -90,7 +93,13 @@ def _mock_page(*, search, status, sort, page, page_size, date_from, date_to) -> 
     page = min(max(page, 1), total_pages)
     start = (page - 1) * page_size
     return Page(items=items[start : start + page_size], total=total, page=page,
-                page_size=page_size, total_pages=total_pages)
+                page_size=page_size, total_pages=total_pages, source=source)
+
+
+def _unavailable_page(*, page, page_size) -> Page[Bill]:
+    """Live fetch failed → an EMPTY page marked unavailable. Never fabricated bills."""
+    return Page(items=[], total=0, page=max(page, 1), page_size=page_size,
+                total_pages=1, source="unavailable")
 
 
 async def _fetch_live(*, status, page, page_size, date_from, date_to) -> Page[Bill]:
@@ -104,7 +113,8 @@ async def _fetch_live(*, status, page, page_size, date_from, date_to) -> Page[Bi
     total = int(raw.get("total_matched", len(orders)) or 0)
     total_pages = max(1, math.ceil(total / page_size)) if total else 1
     items = [Bill(**_map_order(o)) for o in orders]
-    return Page(items=items, total=total, page=max(page, 1), page_size=page_size, total_pages=total_pages)
+    return Page(items=items, total=total, page=max(page, 1), page_size=page_size,
+                total_pages=total_pages, source="live")
 
 
 async def list_bills(
@@ -117,18 +127,30 @@ async def list_bills(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> Page[Bill]:
-    # Search / non-default sort aren't supported by list_orders → serve those via
-    # the mock so the features keep working. Default (date-desc) listing goes live.
+    # Free-text search / non-default sort aren't supported by list_orders (the MCP).
+    # Serve those from committed demo data so the FEATURE keeps working, but label it
+    # source="sample" — it must NEVER appear under a LIVE badge. Default (date-desc)
+    # listing goes live.
     live_capable = not search and (sort is None or sort in ("date:desc", "date"))
     if not live_capable:
         return _mock_page(search=search, status=status, sort=sort, page=page,
-                          page_size=page_size, date_from=date_from, date_to=date_to)
+                          page_size=page_size, date_from=date_from, date_to=date_to,
+                          source="sample")
+
+    # Live path. On MCP failure return an EMPTY, source="unavailable" page — never fake
+    # bills under a live badge. Dev may opt into fixtures (labeled "sample") via the
+    # USE_MOCK_FALLBACK flag, mirroring every other service.
+    def _fallback() -> Page[Bill]:
+        if live_support.settings.use_mock_fallback:
+            return _mock_page(search=search, status=status, sort=sort, page=page,
+                              page_size=page_size, date_from=date_from, date_to=date_to,
+                              source="sample")
+        return _unavailable_page(page=page, page_size=page_size)
 
     key = (date_from, date_to, status.value if status else None, page, page_size)
     return await live_support.live_or_mock(
         cache=_cache, key=key, label="bills",
         fetch=lambda: _fetch_live(status=status, page=page, page_size=page_size,
                                   date_from=date_from, date_to=date_to),
-        mock=lambda: _mock_page(search=search, status=status, sort=sort, page=page,
-                                page_size=page_size, date_from=date_from, date_to=date_to),
+        mock=_fallback,
     )

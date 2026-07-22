@@ -51,14 +51,26 @@ async def _source_of(coro: Awaitable) -> str:
 
 
 async def _couriers_source() -> str:
-    """/api/couriers returns a bare list[Courier] (no `source` field), so mirror
-    what list_couriers() decides internally: live if _fetch_live succeeds, else
-    mock. Same single MCP round-trip the endpoint itself makes."""
-    try:
-        await courier_service._fetch_live(None, None)
+    """/api/couriers returns a bare list[Courier] (no `source` field), so we mirror
+    what list_couriers() decides internally: live if the live fetch succeeds, else
+    unavailable.
+
+    REUSE the /couriers 60s cache instead of calling _fetch_live directly: a FRESH
+    cached entry can only exist after a SUCCESSFUL live fetch, so it reads "live" with
+    ZERO extra MCP calls. On a cold cache we go through the PUBLIC list_couriers() so a
+    successful fetch is cached for reuse (the old _fetch_live discarded its result).
+
+    Source detection is byte-identical to before: list_couriers caches ONLY on success
+    (never on failure / dev fixtures), so if the entry is still not FRESH after the
+    call, the live fetch failed → "unavailable". An empty-but-successful window is a
+    fresh cache entry → "live", exactly as _fetch_live succeeding returned "live"."""
+    key = (None, None)
+    hit = courier_service._cache.get(key)
+    if hit is not None and (monotonic() - hit[0]) < courier_service._CACHE_TTL_SECONDS:
         return "live"
-    except Exception:
-        return "unavailable"
+    await courier_service.list_couriers(*key)
+    fresh = courier_service._cache.get(key)
+    return "live" if fresh is not None and (monotonic() - fresh[0]) < courier_service._CACHE_TTL_SECONDS else "unavailable"
 
 
 # (endpoint, mcp_tools, notes, source-probe factory, is_slow) — tools/notes are

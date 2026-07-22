@@ -2,11 +2,21 @@
 
 For a capped sample of AWBs, price every serviceable courier at the order's
 pincode + weight + payment_type (pincode_serviceability, restricted to the
-order's warehouse → fewer methods + more correct), take the cheapest fwd_billed
-(grossed +18% GST to compare with the all-in applied_courier_rate), and report
-the per-AWB saving vs the courier actually used. Cheapest ≠ better overall, so we
-attach the cheapest courier's RTO%. pincode_serviceability is ~9s p95, so this is
-sampled (25), concurrency-limited (6), and cached 30 min. Failed prices are skipped.
+order's warehouse → fewer methods + more correct), take the cheapest fwd_billed,
+and report the per-AWB saving vs the courier actually used.
+
+RATE BASIS — strictly LIKE-FOR-LIKE, both GST-INCLUSIVE, no GST ever assumed:
+  applied  = order.applied_courier_rate   (== rate_summary.base_rates.forward.total —
+             the all-in applied forward rate, GST-INCLUSIVE).
+  cheapest = pincode_serviceability method fwd_billed   (verified 14/14 == that
+             courier's forward.total, so also GST-INCLUSIVE).
+Both sides are GST-inclusive live fields, so the saving needs NO GST math at all:
+there is no ×1.18 gross and no GST-exclusive derivation (pincode_serviceability
+exposes no GST for the cheapest courier, so a GST-exclusive comparison is impossible).
+
+Cheapest ≠ better overall, so we attach the cheapest courier's RTO%.
+pincode_serviceability is ~9s p95, so this is sampled, concurrency-limited, and
+cached 30 min. Orders without a usable forward breakdown, or failed prices, are skipped.
 """
 
 import asyncio
@@ -24,7 +34,6 @@ logger = logging.getLogger("live")
 # while giving a steadier estimate. (60 was ~100s — too slow for an inline load.)
 _SAMPLE = 40
 _CONCURRENCY = 10
-_GST = 1.18
 _TTL_SECONDS = 1800  # 30 min
 _cache: dict[tuple, tuple[float, SavingsResponse]] = {}
 
@@ -102,8 +111,11 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> SavingsResp
                 return None
             cheapest = min(priced, key=lambda m: float(m["fwd_billed"]))
             cheapest_slug = str(cheapest.get("courier_slug", ""))
-            applied = round(float(o["applied_courier_rate"]), 2)
-            cheapest_rate = round(float(cheapest["fwd_billed"]) * _GST, 2)
+            # LIKE-FOR-LIKE, both GST-INCLUSIVE (no GST math): applied_courier_rate
+            # (== forward.total) vs cheapest fwd_billed (verified == that courier's
+            # forward.total). saving = applied − cheapest.
+            applied = round(float(o["applied_courier_rate"]), 2)     # GST-inclusive
+            cheapest_rate = round(float(cheapest["fwd_billed"]), 2)  # GST-inclusive (no multiplier)
             return SavingRow(
                 awb=str(o["awb"]),
                 courier_used=_name_and_code(str(o.get("courier_slug", "")))[0],

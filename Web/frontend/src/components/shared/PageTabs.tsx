@@ -6,7 +6,8 @@ const BILLING_TABS = [
   { label: "Overview", to: "/bills" },
   { label: "Courier Comparison", to: "/couriers" },
   { label: "Discrepancies", to: "/discrepancies" },
-  { label: "COD Reconciliation", to: "/cod" },
+  { label: "COD Intelligence", to: "/cod" },
+  { label: "Delivery Performance", to: "/delivery-performance" },
 ];
 
 export function BillingTabs() {

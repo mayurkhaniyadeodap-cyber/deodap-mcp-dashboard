@@ -16,7 +16,18 @@ import asyncio
 import logging
 from datetime import date, timedelta
 
-from app.schemas.cod import CodCourier, CodPendingCourier, CodPendingResponse, CodResponse, CodWeekly
+from app.schemas.cod import (
+    CodCourier,
+    CodDimensionRow,
+    CodIntelligenceResponse,
+    CodPaymentEconomics,
+    CodPaymentSplit,
+    CodPendingCourier,
+    CodPendingResponse,
+    CodResponse,
+    CodUnavailableMetric,
+    CodWeekly,
+)
 from app.schemas.dashboard import Kpi
 from app.services import live_support, mcp_client
 from app.services.courier_service import _name_and_code, _norm
@@ -26,6 +37,50 @@ from app.utils.mock import load_mock
 logger = logging.getLogger("live")
 _cache = live_support.new_cache()
 _pending_cache = live_support.new_cache()
+_intel_cache = live_support.new_cache()
+
+# COD-intelligence metrics that CANNOT be produced from the available MCP tools.
+# Surfaced verbatim as "Not available from MCP" — the exact missing capability is
+# stated so it's never mistaken for a value we chose not to show. (Verified live:
+# rto_analysis has no payment dimension; repeat_customer_analysis has no
+# payment_type filter; no COD tool exposes a TDS/deduction field.)
+_COD_UNAVAILABLE: list[tuple[str, str]] = [
+    ("COD RTO %",
+     "The authoritative RTO source (rto_analysis / geo_performance) exposes no "
+     "payment_type dimension. The only payment-split RTO available — list_orders "
+     "filtered payment_type=COD & status=RTO — counts only orders CURRENTLY in RTO "
+     "status, a small fraction of the authoritative RTO population (it excludes "
+     "already-returned / closed RTO). It cannot represent the true COD RTO rate "
+     "without assuming the full RTO status taxonomy."),
+    ("Prepaid RTO %",
+     "Same limitation as COD RTO %: rto_analysis has no payment dimension, and "
+     "list_orders status=RTO captures only the point-in-time RTO-status subset, which "
+     "does not reconcile with the authoritative RTO count."),
+    ("Pincode COD vs Prepaid",
+     "No tool provides a COD / payment split at pincode granularity — order_analytics "
+     "has no 'pincode' group_by (allowed: status/courier/payment_type/warehouse/state/"
+     "channel/seller/dropshipper/shipping_method/shipping_company/seller_account/user), "
+     "and geo_performance(group_by=pincode) exposes only delivery / RTO performance "
+     "with no payment_type or COD field."),
+    ("COD Repeat-Customer Rate",
+     "repeat_customer_analysis accepts no payment_type filter, so COD-only customers "
+     "cannot be isolated from prepaid ones."),
+    ("Per-courier TDS / Deductions",
+     "No COD tool (cod_remittance_summary / cod_remittance_aging) exposes a TDS or "
+     "deduction field; only records / remitted / outstanding / overdue / shortfall / "
+     "avg_tat_days are available."),
+]
+
+
+def _unavailable_metrics() -> list[CodUnavailableMetric]:
+    return [CodUnavailableMetric(metric=m, reason=r) for m, r in _COD_UNAVAILABLE]
+
+
+# Honesty label appended to settlement metrics: recent windows read low because
+# remittance lags order placement (presentation only — no calculation changes).
+_SETTLEMENT_MATURITY = (
+    "Recent orders may not have completed settlement cycles; settlement metrics mature over time."
+)
 
 
 def _load_mock() -> CodResponse:
@@ -133,7 +188,8 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
         # Volume metric → NEUTRAL tone (gray directional %), not a cost/efficiency signal.
         _delta_kpi("cod_value", "COD Value", float(oa_totals.get("cod_value", 0) or 0),
                    _codv(poa_c) if delta_ok else None, _codv(poa_p) if delta_ok else None, "currency", None),
-        _kpi("remitted", "COD Remitted", float(cod_totals.get("remitted", 0) or 0), "currency"),
+        _kpi("remitted", "COD Remitted", float(cod_totals.get("remitted", 0) or 0), "currency",
+             subtitle=_SETTLEMENT_MATURITY),
         _kpi("cod_records", "COD Records", float(cod_totals.get("records", 0) or 0), "number"),
         _kpi("pending", "Pending Reconciliation Items", pending_records, "number",
              subtitle="May include reconciliation cycle delays; not confirmed receivables."),
@@ -217,4 +273,156 @@ async def get_cod_pending(date_from: str | None = None, date_to: str | None = No
     return await live_support.live_or_mock(
         cache=_pending_cache, key=(date_from, date_to), label="cod-pending",
         fetch=lambda: _cod_pending_live(date_from, date_to), mock=_cod_pending_mock,
+    )
+
+
+# --- COD Intelligence (additive) -----------------------------------------------
+# Extends the COD page with intelligence KPIs. EVERY KPI is a live MCP field or a
+# ratio of two live fields from ONE tool (never cross-tool, never fabricated):
+#   order_analytics(group_by=payment_type) → COD share, avg COD order value, split
+#   cod_remittance_aging (totals)          → remittance/overdue rate, outstanding,
+#                                            overdue amount
+#   cod_remittance_aging(group_by=status)  → Settled.avg_tat_days (settlement TAT)
+# Metrics the MCP can't produce are returned in `unavailable` (see _COD_UNAVAILABLE)
+# so the UI shows "Not available from MCP" instead of a guessed number.
+def _cod_intel_mock() -> CodIntelligenceResponse:
+    # Honest "unavailable" — no KPIs. The unavailable-capability list is static
+    # explanatory text (not window data), so it's still returned.
+    return CodIntelligenceResponse(
+        kpis=[], payment_split=[], unit_economics=[], warehouse_cod=[], seller_cod=[],
+        unavailable=_unavailable_metrics(), source="unavailable", date_field="order_date",
+    )
+
+
+def _dimension_rows(payload: dict, top: int = 8) -> list[CodDimensionRow]:
+    """Top-N (by cod_value) warehouse/seller rows from order_analytics(group_by=…).
+    COD intensity is the row's OWN cod_value / order_value (single row, single tool —
+    never blended). Blank groups are skipped."""
+    rows: list[CodDimensionRow] = []
+    for b in payload.get("breakdown", []) or []:
+        group = str(b.get("group", "") or "")
+        if not group:
+            continue
+        order_value = float(b.get("order_value", 0) or 0)
+        cod_value = float(b.get("cod_value", 0) or 0)
+        rows.append(CodDimensionRow(
+            group=group, orders=int(b.get("orders", 0) or 0),
+            order_value=round(order_value, 2), cod_value=round(cod_value, 2),
+            cod_intensity_pct=round(cod_value / order_value * 100, 2) if order_value else 0.0,
+        ))
+    rows.sort(key=lambda r: r.cod_value, reverse=True)
+    return rows[:top]
+
+
+async def _cod_intel_live(date_from: str | None, date_to: str | None) -> CodIntelligenceResponse:
+    args = live_support.date_args(date_from, date_to)
+    pay_r, aging_r, aging_status_r, cost_pay_r, wh_r, seller_r = await asyncio.gather(
+        mcp_client.call_tool("order_analytics", {**args, "group_by": "payment_type"}),
+        mcp_client.call_tool("cod_remittance_aging", {**args, "group_by": "courier"}),
+        mcp_client.call_tool("cod_remittance_aging", {**args, "group_by": "status"}),
+        mcp_client.call_tool("shipping_cost_summary", {**args, "group_by": "payment_type"}),
+        mcp_client.call_tool("order_analytics", {**args, "group_by": "warehouse"}),
+        mcp_client.call_tool("order_analytics", {**args, "group_by": "seller"}),
+    )
+    pay = live_support.parse_tool_json(pay_r)
+    aging = live_support.parse_tool_json(aging_r)
+    aging_status = live_support.parse_tool_json(aging_status_r)
+    cost_pay = live_support.parse_tool_json(cost_pay_r)
+
+    # order_analytics(payment_type): COD share + avg COD order value (ratios stay
+    # WITHIN this one tool so they're internally consistent).
+    pay_totals = pay.get("totals") or {}
+    pay_rows = {str(b.get("group")): b for b in pay.get("breakdown", []) or []}
+    cod_row = pay_rows.get("COD", {})
+    total_orders = float(pay_totals.get("orders", 0) or 0)
+    cod_orders = float(cod_row.get("orders", 0) or 0)
+    cod_order_value = float(cod_row.get("order_value", 0) or 0)
+    cod_share = round(cod_orders / total_orders * 100, 2) if total_orders else 0.0
+    avg_cod_value = round(cod_order_value / cod_orders, 2) if cod_orders else 0.0
+
+    # cod_remittance_aging totals: remittance/overdue rates + outstanding/overdue ₹.
+    aging_t = aging.get("totals") or {}
+    records = float(aging_t.get("records", 0) or 0)
+    settled = float(aging_t.get("settled_records", 0) or 0)
+    overdue_records = float(aging_t.get("overdue_records", 0) or 0)
+    outstanding = float(aging_t.get("outstanding", 0) or 0)
+    overdue_amount = float(aging_t.get("overdue_amount", 0) or 0)
+    remittance_rate = round(settled / records * 100, 2) if records else 0.0
+    overdue_rate = round(overdue_records / records * 100, 2) if records else 0.0
+
+    # Settlement TAT = the Settled status group's avg_tat_days (a direct live field).
+    settled_status = next(
+        (b for b in aging_status.get("breakdown", []) or [] if b.get("group") == "Settled"), {}
+    )
+    settlement_tat = round(float(settled_status.get("avg_tat_days", 0) or 0), 2)
+
+    kpis = [
+        _kpi("cod_share", "COD Order Share", cod_share, "percent",
+             "COD orders / all orders · order_analytics(payment_type)"),
+        _kpi("avg_cod_value", "Avg COD Order Value", avg_cod_value, "currency",
+             "COD order value / COD orders · order_analytics(payment_type)"),
+        _kpi("remittance_rate", "COD Remittance Rate", remittance_rate, "percent",
+             f"settled / total COD records · cod_remittance_aging · {_SETTLEMENT_MATURITY}"),
+        _kpi("overdue_rate", "COD Overdue Rate", overdue_rate, "percent",
+             f"overdue / total COD records · cod_remittance_aging · {_SETTLEMENT_MATURITY}"),
+        _kpi("overdue_amount", "Overdue COD Amount", round(overdue_amount, 2), "currency",
+             "cod_remittance_aging.overdue_amount · settlement-record basis, not confirmed cash"),
+        _kpi("outstanding_cod", "Unresolved COD Records", round(outstanding, 2), "currency",
+             "Settlement-record balance, not confirmed receivable."),
+        _kpi("settlement_tat", "Avg Settlement TAT (Days)", settlement_tat, "number",
+             f"cod_remittance_aging(status=Settled).avg_tat_days · {_SETTLEMENT_MATURITY}"),
+    ]
+
+    payment_split = [
+        CodPaymentSplit(
+            payment_type=str(b.get("group", "")),
+            orders=int(b.get("orders", 0) or 0),
+            order_value=round(float(b.get("order_value", 0) or 0), 2),
+        )
+        for b in pay.get("breakdown", []) or []
+        if b.get("group")
+    ]
+
+    # Unit economics per payment type: cost fields from shipping_cost_summary
+    # (payment_type), avg order value from order_analytics(payment_type) for the SAME
+    # payment type. Both tools agree on the per-payment order count (verified), so this
+    # is COD-only / Prepaid-only — never blended.
+    cost_by_pay = {str(b.get("group", "")): b for b in cost_pay.get("breakdown", []) or []}
+    unit_economics = []
+    for pt in ("COD", "Prepaid"):
+        o = pay_rows.get(pt)
+        c = cost_by_pay.get(pt)
+        if not o and not c:
+            continue
+        o = o or {}
+        c = c or {}
+        orders = int(o.get("orders", 0) or 0)
+        order_value = float(o.get("order_value", 0) or 0)
+        unit_economics.append(CodPaymentEconomics(
+            payment_type=pt, orders=orders,
+            avg_order_value=round(order_value / orders, 2) if orders else 0.0,
+            avg_shipping_cost=round(float(c.get("avg_cost", 0) or 0), 2),
+            fwd_cost=round(float(c.get("fwd_cost", 0) or 0), 2),
+            rto_cost=round(float(c.get("rto_cost", 0) or 0), 2),
+            total_cost=round(float(c.get("total_cost", 0) or 0), 2),
+        ))
+
+    warehouse_cod = _dimension_rows(live_support.parse_tool_json(wh_r))
+    seller_cod = _dimension_rows(live_support.parse_tool_json(seller_r))
+
+    return CodIntelligenceResponse(
+        kpis=kpis, payment_split=payment_split, unit_economics=unit_economics,
+        warehouse_cod=warehouse_cod, seller_cod=seller_cod,
+        unavailable=_unavailable_metrics(), source="live", date_field="order_date",
+    )
+
+
+async def get_cod_intelligence(
+    date_from: str | None = None, date_to: str | None = None
+) -> CodIntelligenceResponse:
+    """COD Intelligence KPIs (order_analytics payment_type + cod_remittance_aging).
+    Own 60s cache; live or honest 'unavailable' (never fabricated)."""
+    return await live_support.live_or_mock(
+        cache=_intel_cache, key=(date_from, date_to), label="cod-intelligence",
+        fetch=lambda: _cod_intel_live(date_from, date_to), mock=_cod_intel_mock,
     )
