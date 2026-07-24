@@ -87,6 +87,21 @@ class Settings(BaseSettings):
     # only for local dev.
     enable_mcp_debug: bool = False
 
+    # --- Security hardening (Phase 5, additive) ---
+    # Response security headers. Enabled by default; CSP is tuned for a Vite React
+    # SPA (external bundle 'self'; inline styles allowed — recharts + style attrs).
+    # Override CONTENT_SECURITY_POLICY in the env if the deployment needs a different
+    # policy. HSTS is meaningful once TLS terminates at the proxy in front of the app.
+    security_headers_enabled: bool = True
+    content_security_policy: str = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'"
+    )
+    hsts_max_age_seconds: int = 31536000  # 1 year
+    # In-memory sliding-window rate limiting (single-worker deploy). Off → no limiting.
+    rate_limit_enabled: bool = True
+
     @property
     def is_production(self) -> bool:
         return self.environment.strip().lower() == "production"
@@ -110,3 +125,24 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def validate_required_env() -> list[str]:
+    """Return a list of missing/invalid REQUIRED env values (empty = all good).
+
+    Enforced only in PRODUCTION (dev keeps working with defaults / a blank MCP).
+    NOTE: REDIS_URL is intentionally NOT checked — this project uses in-process
+    caching and has no Redis dependency; requiring it would break a working deploy.
+    """
+    if not settings.is_production:
+        return []
+    missing: list[str] = []
+    if settings.jwt_secret == DEV_JWT_SECRET or len(settings.jwt_secret) < 32:
+        missing.append("JWT_SECRET (must be a strong, non-default value ≥32 chars)")
+    if not settings.database_url:
+        missing.append("DATABASE_URL")
+    if not settings.mcp_url:
+        missing.append("MCP_URL")
+    if not settings.mcp_token:
+        missing.append("MCP_TOKEN")
+    return missing

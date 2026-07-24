@@ -367,7 +367,7 @@ async def _cod_intel_live(date_from: str | None, date_to: str | None) -> CodInte
              f"overdue / total COD records · cod_remittance_aging · {_SETTLEMENT_MATURITY}"),
         _kpi("overdue_amount", "Overdue COD Amount", round(overdue_amount, 2), "currency",
              "cod_remittance_aging.overdue_amount · settlement-record basis, not confirmed cash"),
-        _kpi("outstanding_cod", "Unresolved COD Records", round(outstanding, 2), "currency",
+        _kpi("outstanding_cod", "Unresolved COD Amount (₹)", round(outstanding, 2), "currency",
              "Settlement-record balance, not confirmed receivable."),
         _kpi("settlement_tat", "Avg Settlement TAT (Days)", settlement_tat, "number",
              f"cod_remittance_aging(status=Settled).avg_tat_days · {_SETTLEMENT_MATURITY}"),

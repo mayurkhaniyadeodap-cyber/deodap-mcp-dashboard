@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 import { AppLayout } from "@/layouts/AppLayout";
 import { AuthLayout } from "@/layouts/AuthLayout";
+import AdminDebugPage from "@/pages/AdminDebugPage";
 import BillsPage from "@/pages/BillsPage";
 import CodPage from "@/pages/CodPage";
 import CouriersPage from "@/pages/CouriersPage";
@@ -62,6 +63,15 @@ export const router = createBrowserRouter([
             element: (
               <RoleGuard allow={["admin"]} fallback={<Navigate to="/dashboard" replace />}>
                 <UsersPage />
+              </RoleGuard>
+            ),
+          },
+          {
+            // Admin-only Debug Panel (reuses /_status, /_status/schedulers, /_mcp/probe).
+            path: "/admin-debug",
+            element: (
+              <RoleGuard allow={["admin"]} fallback={<Navigate to="/dashboard" replace />}>
+                <AdminDebugPage />
               </RoleGuard>
             ),
           },

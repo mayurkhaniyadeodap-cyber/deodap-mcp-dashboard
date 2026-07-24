@@ -2,6 +2,7 @@ import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recha
 import { ChartCard } from "@/components/shared/ChartCard";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { type Column, DataTable } from "@/components/shared/DataTable";
+import { Freshness } from "@/components/shared/Freshness";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { PageError } from "@/components/shared/PageError";
 import { BillingTabs } from "@/components/shared/PageTabs";
@@ -24,7 +25,7 @@ const SUMMARY_COLS: Column<MetricRow>[] = [
 ];
 
 export default function DeliveryPerformancePage() {
-  const { data, isLoading, isError, refetch } = useSla();
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useSla();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
   const unavailable = data?.source === "unavailable";
@@ -117,6 +118,7 @@ export default function DeliveryPerformancePage() {
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-[22px] font-semibold leading-tight tracking-tight">SLA Summary</h3>
               <SourceBadge status={badge} />
+              <Freshness updatedAt={dataUpdatedAt} />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">Delivery SLA metrics · by {df}</p>
           </div>

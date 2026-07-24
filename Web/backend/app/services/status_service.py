@@ -16,11 +16,19 @@ from time import monotonic, perf_counter
 from typing import Awaitable, Callable
 
 from app.core.config import settings
-from app.schemas.status import Capability, EndpointStatus, StatusResponse
+from app.schemas.status import (
+    Capability,
+    EndpointStatus,
+    SchedulersResponse,
+    SchedulerStatus,
+    StatusResponse,
+)
 from app.services import (
     cod_service,
     courier_service,
+    dashboard_service,
     discrepancy_service,
+    live_support,
     mcp_client,
     recovery_service,
     savings_service,
@@ -28,7 +36,8 @@ from app.services import (
     weight_service,
     zone_service,
 )
-from app.services import dashboard_service
+
+
 def _safe_mcp_url() -> str:
     """Base MCP URL with the token param fully redacted — never even a prefix."""
     if not settings.mcp_url:
@@ -257,3 +266,30 @@ async def get_status(include_slow: bool = False) -> StatusResponse:
     result = await _fetch(include_slow)
     _cache[include_slow] = (now, result)
     return result
+
+
+# --- Scheduler telemetry (admin-only, additive) --------------------------------
+# Read-only snapshot of every background warm-cache scheduler, built from each
+# service's EXISTING warm store + primary key. No scheduler behavior is changed,
+# no new timer is created — it only reports the already-recorded timestamps.
+def get_scheduler_status() -> SchedulersResponse:
+    snaps = [
+        live_support.scheduler_snapshot(
+            "dashboard", 300, dashboard_service._dashboard_warm, dashboard_service._dashboard_primary_key
+        ),
+        live_support.scheduler_snapshot(
+            "recovery", recovery_service._TTL_SECONDS, recovery_service._recovery_warm, recovery_service._recovery_primary_key
+        ),
+        live_support.scheduler_snapshot(
+            "savings", savings_service._TTL_SECONDS, savings_service._cache, savings_service._savings_primary_key
+        ),
+        live_support.scheduler_snapshot(
+            "claimable", discrepancy_service._CLAIMABLE_TTL_SECONDS,
+            discrepancy_service._claimable_warm, discrepancy_service._claimable_primary_key,
+        ),
+        live_support.scheduler_snapshot(
+            "dispute-lines", discrepancy_service._LINES_TTL_SECONDS,
+            discrepancy_service._lines_cache, discrepancy_service._lines_primary_key,
+        ),
+    ]
+    return SchedulersResponse(schedulers=[SchedulerStatus(**s) for s in snaps])

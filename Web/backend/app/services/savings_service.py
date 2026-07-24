@@ -55,7 +55,7 @@ async def _rto_by_slug(args: dict) -> dict[str, float]:
     oa = live_support.parse_tool_json(oa_r)
     orders = {str(g.get("group")): int(g.get("orders", 0) or 0) for g in oa.get("breakdown", []) or []}
     counts = {str(c.get("value")): int(c.get("count", 0) or 0) for c in rto.get("by_courier", []) or []}
-    return {slug: round(counts.get(slug, 0) / o * 100, 2) if o else 0.0 for slug, o in orders.items()}
+    return {slug: live_support.rate_pct(counts.get(slug, 0), o) for slug, o in orders.items()}
 
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> SavingsResponse:

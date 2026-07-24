@@ -1,5 +1,6 @@
 import { CheckCircle2 } from "lucide-react";
 import { type Column, DataTable } from "@/components/shared/DataTable";
+import { Freshness } from "@/components/shared/Freshness";
 import { PageError } from "@/components/shared/PageError";
 import { BillingTabs } from "@/components/shared/PageTabs";
 import { SearchInput } from "@/components/shared/SearchInput";
@@ -44,7 +45,7 @@ const RATE_COLS: Column<R>[] = [
 ];
 const RTO_COLS: Column<Rto>[] = [
   { key: "name", header: "Courier", sortable: true, cell: (r) => <span className="font-medium">{r.name}</span> },
-  { key: "rto_pct", header: "RTO %", sortable: true, align: "right", cell: (r) => <span className="tabular-nums font-medium" style={{ color: rtoColor(r.rto_pct) }}>{formatPercent(r.rto_pct)}</span> },
+  { key: "rto_pct", header: "RTO Shipment Rate %", sortable: true, align: "right", cell: (r) => <span className="tabular-nums font-medium" style={{ color: rtoColor(r.rto_pct) }}>{formatPercent(r.rto_pct)}</span> },
   { key: "rto", header: "RTO Cost", sortable: true, align: "right", cell: (r) => money(r.rto) },
   { key: "shipments", header: "Shipment Count", sortable: true, align: "right", cell: (r) => <span className="tabular-nums">{formatNumber(r.shipments)}</span> },
 ];
@@ -74,6 +75,9 @@ export default function DiscrepanciesPage() {
     <div className="space-y-6">
       <BillingTabs />
       <UnavailableBanner show={reconUnavailable} onRetry={() => recon.refetch()} retrying={recon.isFetching} />
+      <div className="flex items-center justify-end">
+        <Freshness updatedAt={recon.dataUpdatedAt} />
+      </div>
 
       {/* 1. Weight Discrepancies — reconciliation_disputes (weight_status=Mismatched) */}
       <Section

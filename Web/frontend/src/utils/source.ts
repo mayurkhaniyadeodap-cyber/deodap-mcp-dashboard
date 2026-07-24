@@ -26,3 +26,26 @@ export const UNAVAILABLE_POLL_MS = 20_000;
 export function pollWhileUnavailable(source?: string | null): number | false {
   return source === "unavailable" ? UNAVAILABLE_POLL_MS : false;
 }
+
+export type CacheState = "cached" | "refreshing" | "cached-refreshing";
+
+/**
+ * Derive a cache badge state from a WARM-CACHE endpoint's existing response flags
+ * (`computing` / `recalculating` — already on RecoveryResponse & ClaimableRateResponse).
+ * Only pass this for warm-cache endpoints; other endpoints omit it so their badge
+ * stays the normal LIVE/Sample/Unavailable.
+ *   computing              → "refreshing"        (building; nothing cached yet)
+ *   live + recalculating   → "cached-refreshing" (serving last-good while rebuilding)
+ *   live (fresh warm)      → "cached"
+ * Returns undefined when no flags are supplied or the source isn't live.
+ */
+export function cacheState(
+  source?: string | null,
+  flags?: { computing?: boolean; recalculating?: boolean },
+): CacheState | undefined {
+  if (!flags) return undefined;
+  if (flags.computing) return "refreshing";
+  if (source === "live" && flags.recalculating) return "cached-refreshing";
+  if (source === "live") return "cached";
+  return undefined;
+}

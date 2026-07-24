@@ -12,15 +12,13 @@ committed mock JSON is returned so the app never breaks in dev.
 """
 
 import asyncio
-import json
 import logging
 import re
 import time
-from typing import Any
 
 from app.core.config import settings
 from app.schemas.couriers import Courier
-from app.services import mcp_client
+from app.services import live_support, mcp_client
 from app.utils.mock import load_mock
 
 logger = logging.getLogger("courier_service")
@@ -49,17 +47,6 @@ _UNASSIGNED = ("Unassigned", "UNA")
 
 def _load_mock_couriers() -> list[Courier]:
     return [Courier(**row) for row in load_mock("couriers.json")]
-
-
-def _parse_tool_json(result: Any) -> dict:
-    """Extract the JSON payload from an MCP CallToolResult (text content block)."""
-    for block in getattr(result, "content", []) or []:
-        if getattr(block, "type", None) == "text":
-            return json.loads(block.text)
-    structured = getattr(result, "structuredContent", None)
-    if structured:
-        return structured
-    raise ValueError("MCP tool returned no JSON content")
 
 
 def _name_and_code(slug: str) -> tuple[str, str]:
@@ -119,51 +106,35 @@ def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float,
     }
 
 
-def _date_args(date_from: str | None, date_to: str | None) -> dict:
-    """Map the frontend from/to to the MCP tool's date params.
-
-    The Ship courier tools (`courier_performance`, `shipping_cost_summary`) name
-    their date-range params literally `from` / `to` (discovered from the tool
-    inputSchema during the pilot). If both are absent we send no date args, so
-    the server keeps its default last-30-days behaviour.
-    """
-    args: dict = {}
-    if date_from:
-        args["from"] = date_from
-    if date_to:
-        args["to"] = date_to
-    return args
-
-
 async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courier]:
-    date_args = _date_args(date_from, date_to)
+    args = live_support.date_args(date_from, date_to)
     perf_raw, cost_raw, rto_raw, oa_raw, aging_raw, recon_raw = await asyncio.gather(
-        mcp_client.call_tool("courier_performance", {**date_args}),
-        mcp_client.call_tool("shipping_cost_summary", {"group_by": "courier", **date_args}),
-        mcp_client.call_tool("rto_analysis", {**date_args}),
-        mcp_client.call_tool("order_analytics", {"group_by": "courier", **date_args}),
-        mcp_client.call_tool("cod_remittance_aging", {"group_by": "courier", **date_args}),
-        mcp_client.call_tool("reconciliation_summary", {"group_by": "courier", **date_args}),
+        mcp_client.call_tool("courier_performance", {**args}),
+        mcp_client.call_tool("shipping_cost_summary", {"group_by": "courier", **args}),
+        mcp_client.call_tool("rto_analysis", {**args}),
+        mcp_client.call_tool("order_analytics", {"group_by": "courier", **args}),
+        mcp_client.call_tool("cod_remittance_aging", {"group_by": "courier", **args}),
+        mcp_client.call_tool("reconciliation_summary", {"group_by": "courier", **args}),
     )
 
-    perf_rows = _parse_tool_json(perf_raw).get("couriers", []) or []
-    cost_by_slug = {b.get("group"): b for b in _parse_tool_json(cost_raw).get("breakdown", []) or []}
+    perf_rows = live_support.parse_tool_json(perf_raw).get("couriers", []) or []
+    cost_by_slug = {b.get("group"): b for b in live_support.parse_tool_json(cost_raw).get("breakdown", []) or []}
     # Real RTO rate = rto_analysis.count ÷ order_analytics.orders (matches the
     # Discrepancies RTO panel); courier_performance.rto_rate_pct is a different,
     # far smaller number so it is NOT used.
-    rto_count = {c.get("value"): int(c.get("count", 0) or 0) for c in _parse_tool_json(rto_raw).get("by_courier", []) or []}
-    oa_by_slug = {b.get("group"): b for b in _parse_tool_json(oa_raw).get("breakdown", []) or []}
+    rto_count = {c.get("value"): int(c.get("count", 0) or 0) for c in live_support.parse_tool_json(rto_raw).get("by_courier", []) or []}
+    oa_by_slug = {b.get("group"): b for b in live_support.parse_tool_json(oa_raw).get("breakdown", []) or []}
     # Live per-courier COD remitted. cod_remittance_aging groups by DISPLAY name,
     # so join on the normalized name. Absent courier → None → "N/A" (never faked).
     remitted_by_norm = {
         _norm(b.get("group", "")): float(b.get("remitted", 0) or 0)
-        for b in _parse_tool_json(aging_raw).get("breakdown", []) or []
+        for b in live_support.parse_tool_json(aging_raw).get("breakdown", []) or []
     }
     # Per-courier reconciliation status (Reconciled / Pending / Disputed). Same
     # DISPLAY-name grouping → join on the normalized name.
     recon_by_norm = {
         _norm(b.get("group", "")): b
-        for b in _parse_tool_json(recon_raw).get("breakdown", []) or []
+        for b in live_support.parse_tool_json(recon_raw).get("breakdown", []) or []
     }
 
     mapped = []
@@ -171,7 +142,7 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
         slug = p.get("courier_slug")
         oa = oa_by_slug.get(slug, {})
         orders = int(oa.get("orders", 0) or 0)
-        rto_pct = round(rto_count.get(slug, 0) / orders * 100, 2) if orders else 0.0
+        rto_pct = live_support.rate_pct(rto_count.get(slug, 0), orders)
         cod_value = float(oa.get("cod_value", 0) or 0)
         name, _code = _name_and_code(slug)
         remitted = remitted_by_norm.get(_norm(name))

@@ -38,3 +38,19 @@ class StatusResponse(BaseModel):
     token_present: bool
     endpoints: list[EndpointStatus]
     capabilities: list[Capability] = []  # live-derived; blocked count = Σ(not available)
+
+
+class SchedulerStatus(BaseModel):
+    """Read-only telemetry for one background warm-cache scheduler (admin-only view).
+    Timestamps are monotonic → age/next are relative seconds, not wall-clock."""
+
+    name: str
+    cadence_seconds: int  # how often the scheduler refreshes the primary window
+    running: bool  # scheduler loop active (MCP configured)
+    warm: bool  # the primary window currently has a cached result
+    cache_age_seconds: float | None = None  # time since last refresh (None = never warmed)
+    next_refresh_seconds: float | None = None  # cadence − age (None = never warmed)
+
+
+class SchedulersResponse(BaseModel):
+    schedulers: list[SchedulerStatus] = []

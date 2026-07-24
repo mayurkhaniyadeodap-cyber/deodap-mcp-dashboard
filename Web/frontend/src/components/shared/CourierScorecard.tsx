@@ -31,7 +31,7 @@ export function CourierScorecard({ courier, maxShipments, totalShipments }: Cour
   const rows: { label: string; value: string }[] = [
     { label: "Total Billed", value: formatCurrencyINR(totalBilled) },
     { label: "Cost/Shipment", value: courier.shipments > 0 ? formatCurrencyINR(totalBilled / courier.shipments) : "N/A" },
-    { label: "RTO Charges %", value: rtoChargesPct != null ? formatPercent(rtoChargesPct) : "N/A" },
+    { label: "RTO Cost Share %", value: rtoChargesPct != null ? formatPercent(rtoChargesPct) : "N/A" },
     { label: "COD Remitted", value: courier.remitted != null ? formatCurrencyINR(courier.remitted) : "N/A" },
   ];
   // A genuine 0% RTO is usually immaturity, not perfection — recent shipments haven't

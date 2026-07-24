@@ -24,6 +24,15 @@ dependencies = [
 dev = [
     "ruff>=0.5",
     "black>=24.4",
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # Pre-existing deprecations (on_event / testclient httpx) — not from the tests.
+    "ignore::DeprecationWarning",
 ]
 
 [tool.ruff]

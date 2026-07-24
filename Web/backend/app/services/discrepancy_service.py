@@ -29,9 +29,9 @@ from app.schemas.reconciliation import (
 )
 from app.services import live_support, mcp_client
 from app.services.courier_service import _name_and_code, _norm
+from app.utils.mock import load_mock
 
 logger = logging.getLogger("live")
-from app.utils.mock import load_mock
 
 _cache = live_support.new_cache()
 
@@ -54,7 +54,7 @@ def _per_courier(orders_by_slug: dict[str, int], counts_by_slug: dict[str, int])
             courier=_name_and_code(slug)[0],
             orders=orders,
             count=counts_by_slug.get(slug, 0),
-            rate_pct=round(counts_by_slug.get(slug, 0) / orders * 100, 2) if orders else 0.0,
+            rate_pct=live_support.rate_pct(counts_by_slug.get(slug, 0), orders),
         )
         for slug, orders in orders_by_slug.items()
     ]

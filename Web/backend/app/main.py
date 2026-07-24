@@ -6,28 +6,36 @@ mounted in later checkpoints. The OpenAPI schema served at /openapi.json
 is the single source of truth for the generated frontend types.
 """
 
+import asyncio
 import logging
+import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routers import analytics, auth, bills, dashboard, export, mcp_debug, meta, profile, status, users
-from app.core.config import DEV_JWT_SECRET, settings
+from app.core.config import DEV_JWT_SECRET, settings, validate_required_env
 from app.middleware.error_handler import register_error_handlers
+from app.middleware.hardening import RateLimitMiddleware, SecurityHeadersMiddleware
 from app.middleware.perf import PerfMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.services import (
     dashboard_service,
     discrepancy_service,
+    mcp_client,
     recovery_service,
     savings_service,
     user_store,
 )
 
 logger = logging.getLogger("startup")
+
+# --- Runtime readiness state (additive; drives /health/ready, changes nothing else) ---
+_APP_START = time.monotonic()
+_READY = {"schedulers_started": False}
 
 # --- Fail-fast production guards (run at import, before serving a single request) ---
 if settings.is_production and settings.jwt_secret == DEV_JWT_SECRET:
@@ -37,6 +45,13 @@ if settings.is_production and settings.jwt_secret == DEV_JWT_SECRET:
     )
 if settings.is_production and settings.enable_mcp_debug:
     raise RuntimeError("ENABLE_MCP_DEBUG must be false in production (it is an MCP tool-call proxy).")
+# Consolidated required-env validation (production only). Lists ALL missing values
+# at once with a clear message. (REDIS_URL is intentionally not required — no Redis.)
+_missing_env = validate_required_env()
+if _missing_env:
+    raise RuntimeError(
+        "Missing/invalid required environment for production:\n  - " + "\n  - ".join(_missing_env)
+    )
 
 app = FastAPI(
     title=settings.app_name,
@@ -69,19 +84,54 @@ async def _start_background_jobs() -> None:
     discrepancy_service.start_claimable_scheduler()
     discrepancy_service.start_lines_scheduler()
     recovery_service.start_recovery_scheduler()
+    _READY["schedulers_started"] = True
+    logger.info(
+        "startup: 5 background schedulers started (dashboard/savings/claimable/dispute-lines/recovery); "
+        "mcp_configured=%s.",
+        bool(settings.mcp_connect_url),
+    )
+
+    # Best-effort MCP connectivity check — non-blocking (own task) and non-fatal, so a
+    # cold/unreachable MCP logs a clear reason without delaying or crashing startup.
+    async def _probe_mcp() -> None:
+        if not settings.mcp_connect_url:
+            logger.warning("startup: MCP not configured (MCP_URL/MCP_TOKEN blank) — endpoints will serve 'unavailable'.")
+            return
+        try:
+            info = await mcp_client.connection_info()
+            logger.info("startup: MCP reachable (transport=%s).", info.get("transport"))
+        except Exception as exc:  # noqa: BLE001 — diagnostic only
+            logger.warning("startup: MCP connectivity check FAILED (non-fatal): %r", exc)
+
+    asyncio.create_task(_probe_mcp())
 
 # --- Middleware (add_middleware is LIFO: last-added is outermost) ---
 # PerfMiddleware added last → outermost, so it times the full request and installs
 # the per-request MCP stats contextvar before any downstream handler runs.
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(PerfMiddleware)
+# Security hardening (added before CORS so CORS stays the OUTERMOST layer and still
+# answers preflight). Pure ASGI → no effect on the MCP stats contextvar. Additive:
+# headers + rate-gating only; response bodies/values are untouched.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
+    # X-Request-ID always; the X-*perf headers are only ever present on the admin
+    # Debug Panel's opt-in requests (PerfMiddleware sets them only when x-perf-debug
+    # is sent), so exposing them changes nothing for normal page traffic.
+    expose_headers=[
+        "X-Request-ID",
+        "X-MCP-Calls",
+        "X-MCP-Real-Calls",
+        "X-MCP-Cache-Hits",
+        "X-MCP-Seconds",
+        "X-Endpoint-Seconds",
+    ],
 )
 
 register_error_handlers(app)
@@ -91,6 +141,32 @@ register_error_handlers(app)
 def health() -> dict:
     """Liveness probe used by the frontend refresh button / dev smoke tests."""
     return {"status": "ok", "service": settings.app_name, "version": settings.version}
+
+
+@app.get(f"{settings.api_prefix}/health/live", tags=["meta"])
+def health_live() -> dict:
+    """Liveness: the process is up and serving. Never touches MCP/DB — a fast probe
+    for orchestrators (restart the pod only if this fails)."""
+    return {"status": "alive", "uptime_seconds": round(time.monotonic() - _APP_START, 1)}
+
+
+@app.get(f"{settings.api_prefix}/health/ready", tags=["meta"])
+def health_ready(response: Response) -> dict:
+    """Readiness: safe to receive traffic. Ready once startup finished (schedulers
+    launched) and the MCP is configured. Returns 503 until then so a load balancer
+    holds traffic during boot. Does NOT call MCP (readiness stays fast and doesn't
+    flap on a transient downstream blip — MCP outages degrade to 'unavailable', not
+    a dead pod)."""
+    mcp_configured = bool(settings.mcp_connect_url)
+    ready = _READY["schedulers_started"] and mcp_configured
+    if not ready:
+        response.status_code = 503
+    return {
+        "status": "ready" if ready else "not_ready",
+        "schedulers_started": _READY["schedulers_started"],
+        "mcp_configured": mcp_configured,
+        "uptime_seconds": round(time.monotonic() - _APP_START, 1),
+    }
 
 
 # --- Resource routers ---

@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { ChartCard } from "@/components/shared/ChartCard";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
+import { Freshness } from "@/components/shared/Freshness";
 import { PageError } from "@/components/shared/PageError";
 import { SourceBadge } from "@/components/shared/SourceBadge";
 import { PanelUnavailable, UnavailableBanner } from "@/components/shared/Unavailable";
@@ -22,10 +23,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRecovery, useTrend } from "@/services/trend.service";
 import { CHART_AXIS, CHART_COLORS, CHART_SERIES } from "@/config/chart";
 import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber } from "@/utils/format";
-import { badgeFromSource } from "@/utils/source";
+import { badgeFromSource, cacheState } from "@/utils/source";
 
 export default function TrendsPage() {
-  const { data, isLoading, isError, refetch } = useTrend();
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useTrend();
   const recovery = useRecovery();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
@@ -41,13 +42,21 @@ export default function TrendsPage() {
   return (
     <div className="space-y-6">
       <UnavailableBanner show={unavailable || recUnavailable} onRetry={() => { refetch(); recovery.refetch(); }} retrying={isLoading} />
+      <div className="flex items-center justify-end">
+        <Freshness updatedAt={dataUpdatedAt} />
+      </div>
       {/* Cumulative rate difference identified — the biggest money signal, up top */}
       <ChartCard
         title="Cumulative Rate Difference Identified"
         description="Identified (courier over-invoiced vs applied), NOT recovered · by reconciliation_at · true recovery needs dispute-outcome tracking (Phase 3)"
         loading={false}
         height={280}
-        action={<SourceBadge status={badgeFromSource(rec?.source)} />}
+        action={
+          <SourceBadge
+            status={badgeFromSource(rec?.source)}
+            cache={cacheState(rec?.source, { computing: rec?.computing, recalculating: rec?.recalculating })}
+          />
+        }
       >
         {recovery.isLoading ? (
           <div className="flex h-full flex-col justify-center gap-2 px-2">

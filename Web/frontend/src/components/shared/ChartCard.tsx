@@ -1,5 +1,6 @@
 import { BarChart3 } from "lucide-react";
 import type { ReactNode } from "react";
+import { AdminToolInfo } from "@/components/shared/AdminToolInfo";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PanelUnavailable } from "@/components/shared/Unavailable";
@@ -22,6 +23,9 @@ interface ChartCardProps {
   /** The chart — typically a Recharts <ResponsiveContainer> at 100%×100%. */
   children: ReactNode;
   className?: string;
+  /** Optional API endpoint this card is fed by. When set, admins see a small
+   *  data-source / MCP-tool affordance (no effect for other users). */
+  endpoint?: string;
 }
 
 /**
@@ -41,6 +45,7 @@ export function ChartCard({
   height = 300,
   children,
   className,
+  endpoint,
 }: ChartCardProps) {
   return (
     <Card className={cn("flex flex-col", className)}>
@@ -49,7 +54,10 @@ export function ChartCard({
           <h3 className="text-[22px] font-semibold leading-tight tracking-tight">{title}</h3>
           {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
         </div>
-        {action}
+        <div className="flex items-center gap-2">
+          {endpoint ? <AdminToolInfo endpoint={endpoint} /> : null}
+          {action}
+        </div>
       </CardHeader>
       <CardContent className="flex-1">
         <div style={{ height }} className="w-full">

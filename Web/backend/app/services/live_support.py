@@ -121,3 +121,32 @@ def date_args(date_from: str | None, date_to: str | None) -> dict:
     if date_to:
         args["to"] = date_to
     return args
+
+
+def rate_pct(count: int, orders: int) -> float:
+    """Percentage of `orders` that are `count` — the shared RTO/NDR rate formula
+    (rto_analysis/ndr_analysis count ÷ order_analytics orders × 100, rounded 2dp).
+    0.0 when there are no orders. Extracted from courier/discrepancy/savings
+    services verbatim — no calculation/rounding change."""
+    return round(count / orders * 100, 2) if orders else 0.0
+
+
+def scheduler_snapshot(name: str, cadence_seconds: int, warm: dict, key: tuple) -> dict:
+    """READ-ONLY warm-cache/scheduler telemetry for one background scheduler.
+
+    Reads a service's existing warm store + primary key — it never mutates state,
+    starts no timer, and does not change scheduler behavior. Warm timestamps are
+    time.monotonic() (not wall-clock), so we report AGE, not an absolute time:
+      cache_age_seconds     = now − last stored (≈ time since last refresh)
+      next_refresh_seconds  = cadence − age (until the next scheduled refresh)
+    Both are None when the primary window has never been warmed yet."""
+    hit = warm.get(key)
+    age = (time.monotonic() - hit[0]) if hit else None
+    return {
+        "name": name,
+        "cadence_seconds": cadence_seconds,
+        "running": bool(settings.mcp_connect_url),
+        "warm": hit is not None,
+        "cache_age_seconds": round(age, 1) if age is not None else None,
+        "next_refresh_seconds": round(max(0.0, cadence_seconds - age), 1) if age is not None else None,
+    }

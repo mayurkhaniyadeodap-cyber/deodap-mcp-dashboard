@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { isAxiosError } from "axios";
 import { AlertTriangle } from "lucide-react";
 import {
   Bar,
@@ -14,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import { ChartCard } from "@/components/shared/ChartCard";
+import { Freshness } from "@/components/shared/Freshness";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { CourierBillsTable } from "@/components/shared/CourierBillsTable";
 import { KpiCard } from "@/components/shared/KpiCard";
@@ -51,17 +54,23 @@ const BREAKDOWN_SEGMENTS = [
 const OTHERS_COLOR = "#64748b"; // slate — the merged "Others" donut slice
 
 export default function DashboardPage() {
-  const { data, isLoading, isError, refetch } = useDashboard();
+  const { data, isLoading, isError, error, refetch, dataUpdatedAt } = useDashboard();
   const couriers = useCouriers();
   const pendingRecon = useDashboardRateDiff();
   const billing = useDashboardCourierBilling();
   const savings = useSavingsOpportunity(); // Savings Identified KPI (slow, own skeleton)
 
   if (isError) {
+    // Distinguish a transport failure (no HTTP response) from a server/MCP error so
+    // the message is actionable rather than a generic "couldn't load".
+    const message =
+      isAxiosError(error) && !error.response
+        ? "Network request failed."
+        : "MCP data is currently unavailable.";
     return (
       <Card className="mx-auto max-w-md p-8 text-center">
         <AlertTriangle className="mx-auto size-8 text-destructive" />
-        <p className="mt-3 font-medium">Couldn't load the dashboard</p>
+        <p className="mt-3 font-medium">{message}</p>
         <button onClick={() => refetch()} className="mt-4 text-sm text-primary hover:underline">Try again</button>
       </Card>
     );
@@ -75,30 +84,40 @@ export default function DashboardPage() {
   const { preset, from, to } = useDateRange();
   const basisLine = (dateField: string) => basisLabel(dateField, preset, from, to);
 
-  // Population cost per courier (Forward + RTO), sorted by total cost.
-  const courierCost = [...(couriers.data ?? [])]
-    .map((c) => ({ name: c.name, freight: c.freight, rto: c.rto }))
-    .sort((a, b) => b.freight + b.rto - (a.freight + a.rto));
+  // Population cost per courier (Forward + RTO), sorted by total cost. Memoized so
+  // these reduce/sort/map chains recompute only when the underlying data changes,
+  // not on every re-render (e.g. when a sibling query re-settles).
+  const courierCost = useMemo(
+    () =>
+      [...(couriers.data ?? [])]
+        .map((c) => ({ name: c.name, freight: c.freight, rto: c.rto }))
+        .sort((a, b) => b.freight + b.rto - (a.freight + a.rto)),
+    [couriers.data],
+  );
 
   // Shipment distribution — dedupe by name, then Top 6 couriers + "Others" so the
   // donut and legend stay compact and never scroll.
-  const distTop = 6;
-  const distMerged = Object.values(
-    (data?.distribution ?? []).reduce<Record<string, { name: string; value: number }>>((acc, d) => {
-      const name = String(d.name);
-      (acc[name] ??= { name, value: 0 }).value += Number(d.value ?? 0);
-      return acc;
-    }, {}),
-  ).sort((a, b) => b.value - a.value);
-  const othersValue = distMerged.slice(distTop).reduce((s, d) => s + d.value, 0);
-  const distribution =
-    othersValue > 0 ? [...distMerged.slice(0, distTop), { name: "Others", value: othersValue }] : distMerged;
-  const distTotal = distribution.reduce((s, d) => s + d.value, 0);
+  const { distribution, distTotal } = useMemo(() => {
+    const distTop = 6;
+    const merged = Object.values(
+      (data?.distribution ?? []).reduce<Record<string, { name: string; value: number }>>((acc, d) => {
+        const name = String(d.name);
+        (acc[name] ??= { name, value: 0 }).value += Number(d.value ?? 0);
+        return acc;
+      }, {}),
+    ).sort((a, b) => b.value - a.value);
+    const othersValue = merged.slice(distTop).reduce((s, d) => s + d.value, 0);
+    const dist = othersValue > 0 ? [...merged.slice(0, distTop), { name: "Others", value: othersValue }] : merged;
+    return { distribution: dist, distTotal: dist.reduce((s, d) => s + d.value, 0) };
+  }, [data?.distribution]);
   const sliceColor = (name: string) => (name === "Others" ? OTHERS_COLOR : courierStyle(name).color);
 
   return (
     <div className="space-y-8">
       <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
+      <div className="flex items-center justify-end">
+        <Freshness updatedAt={dataUpdatedAt} />
+      </div>
       {/* KPI row — 4 fast KPIs + 2 KPIs (Pending Reconciliation, Savings) each
           fetched from its own endpoint with its own skeleton. */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -168,6 +187,7 @@ export default function DashboardPage() {
           onRetry={() => refetch()}
           className="lg:col-span-2"
           height={400}
+          endpoint="/api/couriers"
           action={<SourceBadge status={badge} />}
         >
           <ResponsiveContainer width="100%" height="100%">
@@ -184,7 +204,7 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Shipment Distribution" description="Share of orders by courier" loading={isLoading} unavailable={unavailable} onRetry={() => refetch()} height={400} action={<SourceBadge status={badge} />}>
+        <ChartCard title="Shipment Distribution" description="Share of orders by courier" loading={isLoading} unavailable={unavailable} onRetry={() => refetch()} height={400} endpoint="/api/dashboard" action={<SourceBadge status={badge} />}>
           {/* Legend removed — the donut fills the whole card and stays centered. */}
           <div className="flex h-full items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
@@ -220,6 +240,7 @@ export default function DashboardPage() {
           unavailable={billing.data?.source === "unavailable"}
           onRetry={() => billing.refetch()}
           height={400}
+          endpoint="/api/dashboard/courier-billing"
           action={<SourceBadge status={badgeFromSource(billing.data?.source)} />}
         >
           {billing.isLoading ? (
@@ -252,6 +273,7 @@ export default function DashboardPage() {
           unavailable={unavailable}
           onRetry={() => refetch()}
           height={400}
+          endpoint="/api/dashboard"
           action={<SourceBadge status={badge} />}
         >
           <ResponsiveContainer width="100%" height="100%">

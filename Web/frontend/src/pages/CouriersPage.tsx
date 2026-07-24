@@ -1,5 +1,6 @@
 import { CalendarDays } from "lucide-react";
 import { CourierScorecard } from "@/components/shared/CourierScorecard";
+import { Freshness } from "@/components/shared/Freshness";
 import { PageError } from "@/components/shared/PageError";
 import { BillingTabs } from "@/components/shared/PageTabs";
 import { SourceBadge } from "@/components/shared/SourceBadge";
@@ -10,7 +11,7 @@ import { useDateRange } from "@/store/dateRange.store";
 import { basisLabel } from "@/utils/provenance";
 
 export default function CouriersPage() {
-  const { data, isLoading, isError, refetch } = useCouriers();
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useCouriers();
   const comparisonSrc = useSourceMeta().data?.couriers?.comparison;
   const { preset, from, to } = useDateRange();
   if (isError) return <PageError onRetry={() => refetch()} />;
@@ -23,7 +24,10 @@ export default function CouriersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-2">
         <BillingTabs />
-        <SourceBadge status={comparisonSrc} />
+        <div className="flex items-center gap-3">
+          <Freshness updatedAt={dataUpdatedAt} />
+          <SourceBadge status={comparisonSrc} />
+        </div>
       </div>
 
       {/* Provenance — all courier tools filter on order_date. */}

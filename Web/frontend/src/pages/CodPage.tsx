@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveCo
 import { ChartCard } from "@/components/shared/ChartCard";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { type Column, DataTable } from "@/components/shared/DataTable";
+import { Freshness } from "@/components/shared/Freshness";
 import { KpiCard } from "@/components/shared/KpiCard";
 import { PageError } from "@/components/shared/PageError";
 import { BillingTabs } from "@/components/shared/PageTabs";
@@ -133,6 +134,7 @@ export default function CodPage() {
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-[22px] font-semibold leading-tight tracking-tight">COD Intelligence</h2>
           <SourceBadge status={intelBadge} />
+          <Freshness updatedAt={intel.dataUpdatedAt} />
           <span className="text-sm text-muted-foreground">Live COD behaviour &amp; settlement signals</span>
         </div>
 

@@ -104,4 +104,7 @@ export type ExportDataset = Schemas["ExportDataset"];
 export type StatusResponse = Schemas["StatusResponse"];
 export type EndpointStatus = Schemas["EndpointStatus"];
 export type Capability = Schemas["Capability"];
+// --- Scheduler telemetry (admin-only, additive) ---
+export type SchedulersResponse = Schemas["SchedulersResponse"];
+export type SchedulerStatus = Schemas["SchedulerStatus"];
 
