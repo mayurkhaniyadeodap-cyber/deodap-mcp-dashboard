@@ -94,8 +94,8 @@ class Settings(BaseSettings):
     # policy. HSTS is meaningful once TLS terminates at the proxy in front of the app.
     security_headers_enabled: bool = True
     content_security_policy: str = (
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; "
         "base-uri 'self'; form-action 'self'"
     )
     hsts_max_age_seconds: int = 31536000  # 1 year
