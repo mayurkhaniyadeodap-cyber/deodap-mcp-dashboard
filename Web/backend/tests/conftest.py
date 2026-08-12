@@ -21,6 +21,19 @@ class _FakeUser:
         self.role = role
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _init_db(tmp_path_factory):
+    """Create all tables (incl. export_history) once, and point the export FILE store
+    at a temp dir so tests never write into the repo."""
+    from app.database.session import engine
+    from app.models.base import Base
+    from app.services import export_history_service
+
+    Base.metadata.create_all(engine)
+    export_history_service.EXPORT_DIR = tmp_path_factory.mktemp("exports")
+    yield
+
+
 @pytest.fixture
 def client():
     """TestClient with auth bypassed. NOT used as a context manager, so FastAPI's
@@ -92,6 +105,13 @@ PAYLOADS: dict[str, dict] = {
         "totals": {"rate_diff": 500.0, "rows": 50, "disputed": 10},
         "breakdown": [{"group": "Disputed", "rate_diff": 500.0, "rows": 10, "disputed": 10}],
     },
+    "reconciliation_disputes": {
+        "rows": [
+            {"awb": "D1", "courier": "BlueDart", "recon_status": "Mismatched",
+             "applied_weight_kg": 1.0, "invoiced_weight_kg": 1.5, "weight_diff_kg": 0.5,
+             "applied_shipping_rate": 50.0, "invoiced_shipping_rate": 70.0, "rate_diff": 20.0},
+        ],
+    },
     "weight_reconciliation_summary": {
         "rows": 50, "weight_overcharged": 10, "weight_diff_kg": 20.0, "fwd_rate_diff": 300.0,
         "by_status": {"Reconciled": 30, "Disputed": 20},
@@ -145,8 +165,18 @@ def _clear_caches():
                 "courier_service", "discrepancy_service", "trend_service", "dashboard_service"):
         m = importlib.import_module(f"app.services.{mod}")
         for attr in ("_cache", "_rate_cache", "_billing_cache", "_pending_recon_cache",
-                     "_pending_cache", "_intel_cache", "_dashboard_warm"):
+                     "_pending_cache", "_intel_cache", "_dashboard_warm", "_render_cache"):
             c = getattr(m, attr, None)
             if isinstance(c, dict):
                 c.clear()
+    # Clean export-history rows so per-test history counts are deterministic.
+    from sqlalchemy import delete
+    from app.database.session import SessionLocal
+    from app.models.entities import ExportHistory
+    s = SessionLocal()
+    try:
+        s.execute(delete(ExportHistory))
+        s.commit()
+    finally:
+        s.close()
     yield

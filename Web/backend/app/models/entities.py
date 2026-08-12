@@ -116,3 +116,25 @@ class Setting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     value_json: Mapped[str] = mapped_column(String)
+
+
+class ExportHistory(Base):
+    """One row per export download. Metadata ONLY — the actual CSV/XLSX bytes live on
+    disk at `file_path` (never in the DB). A re-download reads that file directly, so
+    it never re-calls MCP / re-generates anything."""
+
+    __tablename__ = "export_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dataset: Mapped[str] = mapped_column(String(64))
+    fmt: Mapped[str] = mapped_column(String(8))
+    date_from: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    date_to: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    record_count: Mapped[int] = mapped_column(Integer, default=0)
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(128), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="completed")  # completed | failed
+    error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

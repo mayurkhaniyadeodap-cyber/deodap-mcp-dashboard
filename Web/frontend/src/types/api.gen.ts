@@ -24,6 +24,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Live
+         * @description Liveness: the process is up and serving. Never touches MCP/DB — a fast probe
+         *     for orchestrators (restart the pod only if this fails).
+         */
+        get: operations["health_live_api_health_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Ready
+         * @description Readiness: safe to receive traffic. Ready once startup finished (schedulers
+         *     launched) and the MCP is configured. Returns 503 until then so a load balancer
+         *     holds traffic during boot. Does NOT call MCP (readiness stays fast and doesn't
+         *     flap on a transient downstream blip — MCP outages degrade to 'unavailable', not
+         *     a dead pod).
+         */
+        get: operations["health_ready_api_health_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/login": {
         parameters: {
             query?: never;
@@ -441,6 +486,48 @@ export interface paths {
         };
         /** Export File */
         get: operations["export_file_api_export__fmt__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export History
+         * @description Recent exports (metadata only). Reads the DB — never MCP.
+         */
+        get: operations["export_history_api_exports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exports/{export_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download History
+         * @description Re-download an existing export straight from DISK — NO MCP call, no fetch, no
+         *     regeneration. Missing file → 404 so the UI shows 'File unavailable' (never falls
+         *     back to calling MCP).
+         */
+        get: operations["download_history_api_exports__export_id__download_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1298,6 +1385,41 @@ export interface components {
             /** Rows */
             rows: number;
         };
+        /** ExportHistoryList */
+        ExportHistoryList: {
+            /** Items */
+            items: components["schemas"]["ExportHistoryOut"][];
+        };
+        /** ExportHistoryOut */
+        ExportHistoryOut: {
+            /** Id */
+            id: number;
+            /** Dataset */
+            dataset: string;
+            /** Fmt */
+            fmt: string;
+            /** Date From */
+            date_from: string | null;
+            /** Date To */
+            date_to: string | null;
+            /** Record Count */
+            record_count: number;
+            /** Filename */
+            filename: string;
+            /** Media Type */
+            media_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Status */
+            status: string;
+            /** Error */
+            error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2026,6 +2148,50 @@ export interface components {
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    health_live_api_health_live_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    health_ready_api_health_ready_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2850,6 +3016,68 @@ export interface operations {
             header?: never;
             path: {
                 fmt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_history_api_exports_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportHistoryList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_history_api_exports__export_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                export_id: number;
             };
             cookie?: never;
         };

@@ -5,11 +5,11 @@ through the SAME service the dashboard uses (bills_service, cod_service, …) wi
 the current from/to, so exporting Today vs Last-7-days vs Last-30-days yields
 genuinely different files. The CSV/XLSX rendering is unchanged.
 
-Bills note: list_orders is per-order, date-desc only, and huge (~155k rows for
-30 days at ~8s / 500 rows → pulling the whole range is infeasible for a download
-button). So the bills export is anchored at the START of the selected range (its
-oldest page), which is fast (1-2 MCP calls) and makes every range's file
-distinct. total_matched is logged so the full range size stays visible.
+Bills note: list_orders is per-order and date-desc. The bills export paginates the
+ENTIRE selected range (all pages, bounded concurrency) so the file contains every
+order across ALL days in the range — not just the start. Larger ranges cost more
+MCP calls (logged: total_matched / pages / exported_rows); the rendered file is
+cached 60s so a repeat download is instant.
 """
 
 import asyncio
@@ -17,6 +17,7 @@ import csv
 import io
 import logging
 import time
+from datetime import datetime
 
 from openpyxl import Workbook
 
@@ -33,9 +34,10 @@ from app.utils.mock import load_mock
 
 logger = logging.getLogger("live")
 
-# One list_orders page (~8s live). Keeps the bills export responsive; the export
-# is anchored at the range start so different ranges stay distinct even capped.
-_EXPORT_MAX_ROWS = 500
+# Bills export pagination: 500 orders per list_orders page, fetched with bounded
+# concurrency so the WHOLE range is pulled without saturating the (contended) MCP.
+_EXPORT_PAGE_SIZE = 500
+_EXPORT_CONCURRENCY = 4
 
 # Rendered-file cache. Key MUST include dataset+fmt+from+to so a different range
 # never returns a stale identical file. {key: (monotonic_ts, (bytes, media, name))}
@@ -108,23 +110,37 @@ def is_valid_dataset(dataset: str) -> bool:
 
 
 async def _bills_rows(date_from: str | None, date_to: str | None) -> list[dict]:
-    """Bills for the range, anchored at its oldest page (see module docstring)."""
+    """Every bill in the selected range — ALL pages, not just one (see module docstring).
+
+    list_orders is date-desc, so page 1 is the newest 500 and the last page is the
+    oldest 500. We fetch page 1 to learn total_pages, then pull the rest with bounded
+    concurrency and concatenate newest→oldest, finally reversing to chronological
+    ascending. Empty range → empty file (never fabricated)."""
     first = await bills_service.list_bills(
-        page=1, page_size=_EXPORT_MAX_ROWS, date_from=date_from, date_to=date_to
+        page=1, page_size=_EXPORT_PAGE_SIZE, date_from=date_from, date_to=date_to
     )
-    if first.total_pages <= 1:
-        page = first
-    else:
-        # Oldest page = start of the selected range → distinct per range.
-        page = await bills_service.list_bills(
-            page=first.total_pages, page_size=_EXPORT_MAX_ROWS,
-            date_from=date_from, date_to=date_to,
-        )
-    # list_orders is date-desc within a page; reverse to chronological ascending.
-    rows = [b.model_dump(mode="json") for b in reversed(page.items)]
+    total_pages = max(1, first.total_pages)
+    by_page: dict[int, list] = {1: first.items}
+
+    if total_pages > 1:
+        sem = asyncio.Semaphore(_EXPORT_CONCURRENCY)
+
+        async def _fetch(p: int) -> tuple[int, list]:
+            async with sem:
+                pg = await bills_service.list_bills(
+                    page=p, page_size=_EXPORT_PAGE_SIZE, date_from=date_from, date_to=date_to
+                )
+                return p, pg.items
+
+        for p, items in await asyncio.gather(*[_fetch(p) for p in range(2, total_pages + 1)]):
+            by_page[p] = items
+
+    # Flatten in page order (newest → oldest), then reverse for chronological ascending.
+    ordered = [b for p in range(1, total_pages + 1) for b in by_page.get(p, [])]
+    rows = [b.model_dump(mode="json") for b in reversed(ordered)]
     logger.info(
-        "export bills: from=%s to=%s total_matched=%s exported_rows=%s span=%s..%s",
-        date_from, date_to, first.total, len(rows),
+        "export bills: from=%s to=%s total_matched=%s pages=%s exported_rows=%s span=%s..%s",
+        date_from, date_to, first.total, total_pages, len(rows),
         rows[0]["date"] if rows else "-", rows[-1]["date"] if rows else "-",
     )
     return rows
@@ -163,15 +179,21 @@ _RECONCILED_HEADERS = ["courier", "reconciled_lines", "reconciled_amount"]
 
 
 async def _all_sections(date_from: str | None, date_to: str | None) -> list[tuple[str, list[str], list[dict]]]:
-    """Fetch every section concurrently through its real service (live only)."""
-    bills, couriers, cod, disc, zones, recon = await asyncio.gather(
-        _dataset_rows("bills", date_from, date_to),
-        _dataset_rows("couriers", date_from, date_to),
-        _dataset_rows("cod", date_from, date_to),
-        _dataset_rows("discrepancies", date_from, date_to),
-        _dataset_rows("zones", date_from, date_to),
-        discrepancy_service.get_reconciliation(date_from=date_from, date_to=date_to),
-    )
+    """Fetch every section through its real service, SEQUENTIALLY.
+
+    NOT concurrent: the Ship MCP contends badly under a burst, and the All Data
+    fan-out (5 datasets + reconciliation + full bills pagination) fired all at once
+    tripped the per-tool timeout, so every service fell back to its empty
+    'unavailable' state → a headers-only file. Running one dataset at a time keeps
+    the load identical to an INDIVIDUAL export (which works), so all sections get
+    real rows. Same services / calculations / data / range — only the concurrency
+    changed. (Heavier ranges take longer; the rendered file is cached 60s.)"""
+    bills = await _dataset_rows("bills", date_from, date_to)
+    couriers = await _dataset_rows("couriers", date_from, date_to)
+    cod = await _dataset_rows("cod", date_from, date_to)
+    disc = await _dataset_rows("discrepancies", date_from, date_to)
+    zones = await _dataset_rows("zones", date_from, date_to)
+    recon = await discrepancy_service.get_reconciliation(date_from=date_from, date_to=date_to)
     return [
         ("Bills", _DATASETS["bills"]["headers"], bills),
         ("Courier Comparison", _DATASETS["couriers"]["headers"], couriers),
@@ -215,9 +237,23 @@ def _render_all_bytes(sections: list[tuple[str, list[str], list[dict]]], fmt: st
 
 
 def _filename(dataset: str, fmt: str, date_from: str | None, date_to: str | None) -> str:
+    """Base download name: dataset + the SELECTED range (custom or preset). No
+    hardcoded span — whatever from/to the shared date-range state passed through."""
     if date_from and date_to:
         return f"deodap_{dataset}_{date_from}_{date_to}.{fmt}"
     return f"deodap_{dataset}.{fmt}"
+
+
+def with_download_stamp(filename: str) -> str:
+    """Insert `_downloaded_<YYYY-MM-DD>_<HH-MM-SS>` before the extension, e.g.
+    deodap_bills_2026-07-01_2026-07-30.csv →
+    deodap_bills_2026-07-01_2026-07-30_downloaded_2026-08-12_10-35-42.csv
+
+    Called at the HTTP layer (not inside the cached render), so the timestamp is the
+    ACTUAL download time even on a render-cache hit."""
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    name, dot, ext = filename.rpartition(".")
+    return f"{name}_downloaded_{stamp}.{ext}" if dot else f"{filename}_downloaded_{stamp}"
 
 
 def _render_bytes(headers: list[str], rows: list[dict], fmt: str, sheet: str) -> tuple[bytes, str]:
@@ -247,8 +283,10 @@ async def render(
     fmt: str,
     date_from: str | None = None,
     date_to: str | None = None,
-) -> tuple[bytes, str, str]:
-    """Return (content, media_type, filename) for the dataset+range in the given format."""
+) -> tuple[bytes, str, str, int]:
+    """Return (content, media_type, base_filename, record_count) for the dataset+range.
+    base_filename carries the selected range only; the HTTP layer adds the download
+    timestamp (with_download_stamp)."""
     key = (dataset, fmt, date_from, date_to)
     now = time.monotonic()
     cached = _render_cache.get(key)
@@ -259,12 +297,14 @@ async def render(
         sections = await _all_sections(date_from, date_to)
         content, media_type = _render_all_bytes(sections, fmt)
         filename = _filename("all_data", fmt, date_from, date_to)
+        record_count = sum(len(rows) for _, _, rows in sections)
     else:
         headers = _DATASETS[dataset]["headers"]
         rows = await _dataset_rows(dataset, date_from, date_to)
         filename = _filename(dataset, fmt, date_from, date_to)
         content, media_type = _render_bytes(headers, rows, fmt, dataset)
+        record_count = len(rows)
 
-    result = (content, media_type, filename)
+    result = (content, media_type, filename, record_count)
     _render_cache[key] = (now, result)
     return result

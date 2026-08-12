@@ -99,6 +99,8 @@ export type SavingRow = Schemas["SavingRow"];
 // --- Export ---
 export type ExportCatalog = Schemas["ExportCatalog"];
 export type ExportDataset = Schemas["ExportDataset"];
+export type ExportHistoryOut = Schemas["ExportHistoryOut"];
+export type ExportHistoryList = Schemas["ExportHistoryList"];
 
 // --- MCP status view ---
 export type StatusResponse = Schemas["StatusResponse"];

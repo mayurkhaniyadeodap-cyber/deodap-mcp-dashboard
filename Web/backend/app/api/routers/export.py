@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, st
 
 from app.api.deps import DateRange, date_range_params, get_current_user, require_role
 from app.auth.roles import Role
-from app.schemas.export import ExportCatalog
-from app.services import discrepancy_service, export_service
+from app.schemas.export import ExportCatalog, ExportHistoryList
+from app.services import discrepancy_service, export_history_service, export_service
 
 router = APIRouter(tags=["export"])
 
@@ -42,9 +42,49 @@ async def export_file(
 ) -> Response:
     if not export_service.is_valid_dataset(dataset):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
-    content, media_type, filename = await export_service.render(
-        dataset, fmt, date_from=dates.date_from, date_to=dates.date_to
+    try:
+        content, media_type, base_filename, record_count = await export_service.render(
+            dataset, fmt, date_from=dates.date_from, date_to=dates.date_to
+        )
+    except Exception as exc:  # noqa: BLE001 — record the failure, then surface it
+        base_filename = export_service._filename(dataset, fmt, dates.date_from, dates.date_to)
+        export_history_service.record_failure(
+            dataset=dataset, fmt=fmt, date_from=dates.date_from, date_to=dates.date_to,
+            filename=export_service.with_download_stamp(base_filename), error=repr(exc),
+        )
+        raise
+    # Stamp the ACTUAL download time onto the (cached) range-based filename, persist the
+    # file + a completed history row, then return the download (behaviour unchanged).
+    filename = export_service.with_download_stamp(base_filename)
+    export_history_service.record_success(
+        dataset=dataset, fmt=fmt, date_from=dates.date_from, date_to=dates.date_to,
+        filename=filename, media_type=media_type, content=content, record_count=record_count,
     )
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/exports", response_model=ExportHistoryList, dependencies=[Depends(get_current_user)])
+def export_history(limit: int = Query(default=50, ge=1, le=200)) -> ExportHistoryList:
+    """Recent exports (metadata only). Reads the DB — never MCP."""
+    return ExportHistoryList(items=export_history_service.list_recent(limit=limit))
+
+
+@router.get(
+    "/exports/{export_id}/download",
+    dependencies=[Depends(require_role(Role.admin, Role.employee))],
+)
+def download_history(export_id: int = Path(ge=1)) -> Response:
+    """Re-download an existing export straight from DISK — NO MCP call, no fetch, no
+    regeneration. Missing file → 404 so the UI shows 'File unavailable' (never falls
+    back to calling MCP)."""
+    got = export_history_service.get_file(export_id)
+    if got is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File unavailable")
+    content, media_type, filename = got
     return Response(
         content=content,
         media_type=media_type,
