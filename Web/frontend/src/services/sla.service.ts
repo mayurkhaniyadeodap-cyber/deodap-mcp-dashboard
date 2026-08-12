@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type { SlaResponse } from "@/types/api";
@@ -14,6 +14,7 @@ export function useSla() {
   return useQuery({
     queryKey: ["sla-performance", from, to],
     queryFn: async () => (await api.get<SlaResponse>("/sla-performance", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }

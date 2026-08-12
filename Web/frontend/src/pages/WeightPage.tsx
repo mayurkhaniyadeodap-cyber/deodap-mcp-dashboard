@@ -27,7 +27,7 @@ import { formatCurrencyINR, formatNumber } from "@/utils/format";
 import { badgeFromSource } from "@/utils/source";
 
 export default function WeightPage() {
-  const { data, isLoading, isError, refetch, dataUpdatedAt } = useWeight();
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useWeight();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
   const unavailable = data?.source === "unavailable";
@@ -44,7 +44,7 @@ export default function WeightPage() {
 
   return (
     <div className="space-y-6">
-      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isFetching} />
       <div className="flex items-center justify-end">
         <Freshness updatedAt={dataUpdatedAt} />
       </div>

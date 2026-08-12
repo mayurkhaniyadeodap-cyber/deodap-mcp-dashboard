@@ -25,7 +25,7 @@ const SUMMARY_COLS: Column<MetricRow>[] = [
 ];
 
 export default function DeliveryPerformancePage() {
-  const { data, isLoading, isError, refetch, dataUpdatedAt } = useSla();
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useSla();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
   const unavailable = data?.source === "unavailable";
@@ -74,7 +74,7 @@ export default function DeliveryPerformancePage() {
   return (
     <div className="space-y-6">
       <BillingTabs />
-      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isFetching} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -83,7 +83,7 @@ export default function DeliveryPerformancePage() {
           : unavailable
           ? Array.from({ length: 5 }).map((_, i) => (
               <Card key={i} className="h-[130px]">
-                <PanelUnavailable onRetry={() => refetch()} />
+                <PanelUnavailable onRetry={() => refetch()} retrying={isFetching} />
               </Card>
             ))
           : kpis.map((k) => <KpiCard key={k.key} kpi={k} source={badge} basis={basis} />)}

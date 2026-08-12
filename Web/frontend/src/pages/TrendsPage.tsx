@@ -26,7 +26,7 @@ import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber } from "@/uti
 import { badgeFromSource, cacheState } from "@/utils/source";
 
 export default function TrendsPage() {
-  const { data, isLoading, isError, refetch, dataUpdatedAt } = useTrend();
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useTrend();
   const recovery = useRecovery();
   if (isError) return <PageError onRetry={() => refetch()} />;
 
@@ -41,7 +41,7 @@ export default function TrendsPage() {
 
   return (
     <div className="space-y-6">
-      <UnavailableBanner show={unavailable || recUnavailable} onRetry={() => { refetch(); recovery.refetch(); }} retrying={isLoading} />
+      <UnavailableBanner show={unavailable || recUnavailable} onRetry={() => { refetch(); recovery.refetch(); }} retrying={isFetching || recovery.isFetching} />
       <div className="flex items-center justify-end">
         <Freshness updatedAt={dataUpdatedAt} />
       </div>

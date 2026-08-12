@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type {
@@ -9,12 +9,18 @@ import type {
 } from "@/types/api";
 import { pollWhileUnavailable } from "@/utils/source";
 
+// placeholderData: keepPreviousData — on a Retry (invalidate) or a date-range change,
+// the already-loaded data STAYS VISIBLE while this panel refetches in the background,
+// so fast panels never blank out waiting for the slowest one. Each panel updates the
+// moment its own response arrives. Same data/values — only the loading UX changes.
+
 /** GET /api/dashboard?from&to — KPIs, courier billing, distribution, state cost (fast, ~6s). */
 export function useDashboard() {
   const { from, to } = useDateRange();
   return useQuery({
     queryKey: ["dashboard", from, to],
     queryFn: async () => (await api.get<DashboardResponse>("/dashboard", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }
@@ -30,6 +36,7 @@ export function useClaimableRate() {
   return useQuery({
     queryKey: ["claimable-rate", from, to],
     queryFn: async () => (await api.get<ClaimableRateResponse>("/disputes/claimable-rate", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     staleTime: 25 * 60 * 1000, // mirror the 30-min server cache
     // While the background job is still computing (or recalculating a freshly-picked
     // range), poll so the KPI flips to the real figure the moment it's warm.
@@ -52,6 +59,7 @@ export function useDashboardRateDiff() {
   return useQuery({
     queryKey: ["dashboard-rate-diff", from, to],
     queryFn: async () => (await api.get<RateDiffKpi>("/dashboard/rate-diff", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -65,6 +73,7 @@ export function useDashboardCourierBilling() {
   return useQuery({
     queryKey: ["dashboard-courier-billing", from, to],
     queryFn: async () => (await api.get<CourierBillingResponse>("/dashboard/courier-billing", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }

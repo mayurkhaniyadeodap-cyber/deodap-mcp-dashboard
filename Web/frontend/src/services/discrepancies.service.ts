@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type {
@@ -21,6 +21,7 @@ export function useReconciliation() {
     queryKey: ["reconciliation", from, to],
     queryFn: async () =>
       (await api.get<ReconciliationResponse>("/discrepancies/reconciliation", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     staleTime: 60_000,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
@@ -32,6 +33,7 @@ export function useDiscrepancies() {
   return useQuery({
     queryKey: ["discrepancies", from, to],
     queryFn: async () => (await api.get<DiscrepancyResponse>("/discrepancies", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -156,6 +158,7 @@ export function useSavingsOpportunity() {
   return useQuery({
     queryKey: ["savings-opportunity", from, to],
     queryFn: async () => (await api.get<SavingsResponse>("/savings-opportunity", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     staleTime: 30 * 60 * 1000, // matches the server's 30-min cache
     gcTime: 30 * 60 * 1000,
   });

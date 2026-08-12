@@ -68,7 +68,7 @@ const dimColumns = (groupHeader: string): Column<DimRow>[] => [
 ];
 
 export default function CodPage() {
-  const { data, isLoading, isError, refetch } = useCod();
+  const { data, isLoading, isFetching, isError, refetch } = useCod();
   const pending = useCodPending();
   const intel = useCodIntelligence();
   const [statusFilter, setStatusFilter] = useState("all");
@@ -127,7 +127,7 @@ export default function CodPage() {
   return (
     <div className="space-y-6">
       <BillingTabs />
-      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isFetching} />
 
       {/* ===================== COD Intelligence (live) ===================== */}
       <section className="space-y-4">
@@ -144,7 +144,7 @@ export default function CodPage() {
             ? Array.from({ length: 7 }).map((_, i) => <Card key={i} className="h-[130px] animate-pulse" />)
             : intelUnavailable
             ? Array.from({ length: 4 }).map((_, i) => (
-                <Card key={i} className="h-[130px]"><PanelUnavailable onRetry={() => intel.refetch()} /></Card>
+                <Card key={i} className="h-[130px]"><PanelUnavailable onRetry={() => intel.refetch()} retrying={intel.isFetching} /></Card>
               ))
             : intelKpis.map((k) => <KpiCard key={k.key} kpi={k} source={intelBadge} basis={intelBasis} />)}
         </div>
@@ -271,7 +271,7 @@ export default function CodPage() {
           ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="h-[130px] animate-pulse" />)
           : unavailable
           ? Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i} className="h-[130px]"><PanelUnavailable onRetry={() => refetch()} /></Card>
+              <Card key={i} className="h-[130px]"><PanelUnavailable onRetry={() => refetch()} retrying={isFetching} /></Card>
             ))
           : data.kpis.map((k) => (
               <KpiCard key={k.key} kpi={k} source={badge} basis={basisLabel(df, preset, from, to)} />

@@ -11,6 +11,7 @@ import asyncio
 import contextvars
 import logging
 import time
+import weakref
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
@@ -197,6 +198,28 @@ _TOOL_CACHE_MAX = 256
 _tool_cache: dict[tuple, tuple[float, Any]] = {}
 _tool_inflight: dict[tuple, "asyncio.Future[Any]"] = {}
 
+# --- Global bounded concurrency for REAL MCP round-trips -----------------------
+# 3. CONCURRENCY CAP: only ACTUAL round-trips take a slot (cache + single-flight
+#    hits already returned before we get here, so they never consume one). Bounding
+#    total simultaneous round-trips stops a Retry — which fires every page query at
+#    once — from saturating the upstream and triggering the 5s→18s contention above.
+#    This paces calls; it NEVER drops, skips, samples, or reorders data, and the
+#    12s timeout + unavailable fallback still apply to each slotted call unchanged.
+# The semaphore is created lazily per running event loop (keyed weakly) so it binds
+# to the correct loop — one shared limiter in production, isolated per test loop.
+_mcp_semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _mcp_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _mcp_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, settings.mcp_max_concurrency))
+        _mcp_semaphores[loop] = sem
+    return sem
+
 
 def _tool_key(name: str, arguments: dict) -> tuple:
     # args are flat scalars (str/int/bool) → hashable and order-independent.
@@ -234,10 +257,18 @@ async def call_tool(name: str, arguments: dict | None = None) -> Any:
 
     loop = asyncio.get_running_loop()
     fut: "asyncio.Future[Any]" = loop.create_future()
+    # Register inflight BEFORE awaiting the concurrency slot: identical calls that
+    # arrive while we're queued single-flight onto this future (a cache hit, no slot)
+    # instead of stacking up their own real round-trips behind the semaphore.
     _tool_inflight[key] = fut
-    call_started = time.monotonic()
     try:
-        result = await _execute(lambda s: s.call_tool(name, arguments))
+        # Take a global slot only for the REAL round-trip. Time only the round-trip
+        # (started after acquiring) so mcp_seconds stays "pure MCP time" — directly
+        # comparable before/after this change; queue wait shows up in endpoint time.
+        async with _mcp_semaphore():
+            call_started = time.monotonic()
+            result = await _execute(lambda s: s.call_tool(name, arguments))
+            elapsed = time.monotonic() - call_started
     except Exception as exc:  # noqa: BLE001 — never cache failures
         if not fut.done():
             fut.set_exception(exc)
@@ -245,7 +276,6 @@ async def call_tool(name: str, arguments: dict | None = None) -> Any:
     finally:
         _tool_inflight.pop(key, None)
 
-    elapsed = time.monotonic() - call_started
     if stats is not None:
         stats.real_calls += 1
         stats.mcp_seconds += elapsed

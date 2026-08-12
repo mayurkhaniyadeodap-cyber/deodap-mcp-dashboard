@@ -1,15 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type { RecoveryResponse, TrendResponse } from "@/types/api";
 import { pollWhileUnavailable } from "@/utils/source";
 
-/** GET /api/trend?from&to — daily orders/value + monthly per-courier billing (fast). */
+/** GET /api/trend?from&to — daily orders/value + monthly per-courier billing (fast).
+ *  keepPreviousData: charts stay visible during a Retry/date change (same values). */
 export function useTrend() {
   const { from, to } = useDateRange();
   return useQuery({
     queryKey: ["trend", from, to],
     queryFn: async () => (await api.get<TrendResponse>("/trend", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }
@@ -25,6 +27,7 @@ export function useRecovery() {
   return useQuery({
     queryKey: ["trend-recovery", from, to],
     queryFn: async () => (await api.get<RecoveryResponse>("/trend-recovery", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     staleTime: 10 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     // While the background job is still computing (or recalculating a freshly-picked

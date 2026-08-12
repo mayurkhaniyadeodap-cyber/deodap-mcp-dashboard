@@ -51,10 +51,14 @@ export function PanelUnavailable({
   const busy = retrying || Boolean(retryingProp);
   return (
     <div className={cn("flex size-full min-h-[140px] flex-col items-center justify-center gap-2 text-center", className)}>
-      <WifiOff className="size-6 text-warning" />
-      <p className="text-sm font-medium">Live data unavailable</p>
+      <WifiOff className={cn("size-6 text-warning", busy && "animate-pulse")} />
+      {/* While a fetch is in flight, show "Retrying…" — never the static "unavailable"
+          message (a fetching state is NOT an outage; req 4/7). */}
+      <p className="text-sm font-medium">{busy ? "Retrying live data…" : "Live data unavailable"}</p>
       <p className="max-w-xs text-xs text-muted-foreground">
-        Ship MCP unreachable — no numbers shown. Retrying automatically…
+        {busy
+          ? "Fetching from the Ship MCP…"
+          : "Ship MCP unreachable — no numbers shown. Retrying automatically…"}
       </p>
       <Button variant="outline" size="sm" onClick={retry} disabled={busy} className="mt-1">
         <RefreshCw className={cn("mr-1.5 size-3.5", busy && "animate-spin")} />
@@ -83,9 +87,16 @@ export function UnavailableBanner({
   if (!show) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2.5 text-sm text-warning">
-      <WifiOff className="size-4 shrink-0" />
-      <span className="font-medium">Live data unavailable</span>
-      <span className="text-warning/80">— the Ship MCP is unreachable. No numbers are shown; retrying automatically.</span>
+      <WifiOff className={cn("size-4 shrink-0", busy && "animate-pulse")} />
+      {/* A fetch-in-flight shows "Retrying…", not the outage message (req 4/7). */}
+      {busy ? (
+        <span className="font-medium">Retrying live data…</span>
+      ) : (
+        <>
+          <span className="font-medium">Live data unavailable</span>
+          <span className="text-warning/80">— the Ship MCP is unreachable. No numbers are shown; retrying automatically.</span>
+        </>
+      )}
       <Button
         variant="outline"
         size="sm"

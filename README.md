@@ -2,8 +2,9 @@
 
 A courier-billing & logistics analytics dashboard for DeoDap. It surfaces live
 shipping cost, COD reconciliation, weight-dispute, RTO/NDR, and rate-difference
-data pulled from the **Ship MCP** server, with a transparent mock fallback wherever
-no live source exists yet.
+data pulled from the **Ship MCP** server. When a live source is unreachable the UI
+shows an honest *data unavailable* state — never a fabricated number — and committed
+sample fixtures remain a dev-only opt-in (`USE_MOCK_FALLBACK`).
 
 <p align="center">
   <em>React + Vite + TypeScript frontend · FastAPI backend · single-container Docker deploy</em>
@@ -23,25 +24,33 @@ FastAPI router → service layer → Ship MCP tool (live)  ─or─  mock JSON (
 ```
 
 TypeScript types are **generated** from FastAPI's OpenAPI schema — never
-hand-written. Every card shows a 🟢 **Live** / ⚪ **Sample** badge driven by the
-per-response `source` field, so the UI never lies about where a number came from.
+hand-written. Every card shows a 🟢 **Live** / ⚪ **Sample** / ⚫ **Unavailable**
+badge driven by the per-response `source` field, so the UI never lies about where a
+number came from.
 
 > A full field-level provenance map (every UI value → MCP tool → response field)
 > lives in [`MCP_DATA_MAPPING.md`](./MCP_DATA_MAPPING.md).
 
 ## Features
 
-- **10 analytics pages** — Dashboard, Bills, Courier Comparison, Discrepancies,
-  COD Reconciliation, State Analysis, Weight Analysis, Trend Analysis, Export,
-  Configuration.
-- **Live MCP integration** with a 60s cache and automatic mock fallback (blank
-  token / MCP error → committed sample data, never a broken screen).
-- **Honest provenance & maturity** — Live/Sample badges and per-panel date-basis
-  labels (`Order date · Last 30 days`, `Reconciliation date · …`).
+- **Analytics pages** — Dashboard, Bills, Courier Comparison, Discrepancies,
+  COD Intelligence, Delivery Performance, State Analysis, Weight Analysis,
+  Trend Analysis, Export, Configuration.
+- **Live MCP integration** — single-flight de-duplication, a 60s result cache, a
+  bounded global concurrency limit (`MCP_MAX_CONCURRENCY`, default 6) and a 12s
+  per-call timeout. On any failure the panel shows an honest *data unavailable*
+  state (fixtures only when `USE_MOCK_FALLBACK=true`); a single **Retry** refetches
+  every live query on the page at once, with previous data kept visible while it runs.
+- **Honest provenance & maturity** — Live/Sample/Unavailable badges and per-panel
+  date-basis labels (`Order date · Last 30 days`, `Reconciliation date · …`).
 - **JWT auth with server-side RBAC** — Admin / Employee roles enforced in the API
   (`require_role`), not just the UI. Users live in the database (bcrypt-hashed).
-- **CSV / XLSX export** of live datasets, role-gated.
-- **MCP Status page** — a live-vs-mock snapshot across every endpoint.
+- **CSV / XLSX export** of live datasets over the full selected date range,
+  role-gated, with **Export History** — every export is recorded and re-downloadable
+  from disk (no re-fetch from the MCP).
+- **Security hardening** — Content-Security-Policy + security headers and in-memory
+  sliding-window rate limiting (all on by default), plus fail-fast production boot guards.
+- **MCP Status page** — a live-vs-unavailable snapshot across every endpoint.
 - **Single-container deploy** — the built frontend is served by FastAPI.
 
 ## Tech stack
@@ -136,9 +145,15 @@ Backend (`Web/backend/.env` — see `.env.example`):
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | first boot | Seeds the first admin when the DB is empty. |
 | `DATABASE_URL` | no | User store. Default SQLite; container uses `sqlite:////data/deodap.db`. |
 | `CORS_ORIGINS` | no | Comma-separated allowed origins. Never `*`. |
-| `MCP_URL` / `MCP_TOKEN` | live data | Ship MCP base URL + token (URL query auth). Blank → mock fallback. |
-| `MCP_TIMEOUT_SECONDS` | no | Per-call timeout (default 30). |
+| `MCP_URL` / `MCP_TOKEN` | live data | Ship MCP base URL + token (URL query auth). Blank → *data unavailable* (or fixtures if `USE_MOCK_FALLBACK`). |
+| `MCP_TIMEOUT_SECONDS` | no | Per-call timeout (default 12). |
+| `MCP_MAX_CONCURRENCY` | no | Global cap on simultaneous **real** MCP round-trips (default 6). Cache/single-flight hits don't take a slot. |
+| `USE_MOCK_FALLBACK` | no | Dev-only: serve committed JSON fixtures instead of the *unavailable* state on MCP failure. Must be false in production. |
 | `ENABLE_MCP_DEBUG` | no | Mounts `/_mcp/probe` + `/_mcp/tools`. **Must be false in production.** |
+| `SECURITY_HEADERS_ENABLED` | no | Send CSP + security headers (default true). |
+| `CONTENT_SECURITY_POLICY` | no | Override the default CSP string (e.g. to allow Google Fonts). |
+| `RATE_LIMIT_ENABLED` | no | In-memory sliding-window rate limiting (default true; single-worker deploy). |
+| `HSTS_MAX_AGE_SECONDS` | no | HSTS max-age once TLS terminates at the proxy (default 1 year). |
 
 Frontend (`Web/frontend/.env`): `VITE_API_BASE_URL=/api` (relative → same-origin).
 
@@ -155,7 +170,8 @@ Frontend (`Web/frontend/.env`): `VITE_API_BASE_URL=/api` (relative → same-orig
    │  ├─ app/
    │  │  ├─ main.py            # app, middleware, startup seed, static SPA serving
    │  │  ├─ core/              # config (pydantic-settings), security (JWT + bcrypt)
-   │  │  ├─ api/routers/       # auth, dashboard, analytics, bills, export, users, status, meta
+   │  │  ├─ api/routers/       # auth, dashboard, analytics, bills, export, users, profile, status, meta
+   │  │  ├─ middleware/        # perf logging + security headers / rate limiting
    │  │  ├─ services/          # ⭐ the ONLY data source — MCP client + per-domain services
    │  │  ├─ schemas/           # Pydantic response contracts
    │  │  ├─ models/            # SQLAlchemy 2.0 (User store is live)
@@ -183,15 +199,18 @@ roles. Interactive docs at `/docs` (development only).
 |---|---|---|---|
 | `POST` | `/login` | public | email + password → JWT + user |
 | `GET` | `/me` | user | current user |
-| `GET` | `/health` | public | liveness probe |
-| `GET` | `/dashboard` · `/dashboard/rate-diff` · `/dashboard/courier-billing` | user | KPIs, charts, sampled billing |
-| `GET` | `/couriers` · `/cod` · `/zones` · `/weight` · `/trend` · `/discrepancies` | user | analytics resources |
+| `GET` | `/health` · `/health/live` · `/health/ready` | public | liveness / readiness probes |
+| `GET` | `/dashboard` · `/dashboard/rate-diff` · `/dashboard/pending-reconciliation` · `/dashboard/courier-billing` | user | KPIs, charts, sampled billing |
+| `GET` | `/couriers` · `/zones` · `/weight` · `/trend` · `/trend-recovery` · `/discrepancies` | user | analytics resources |
+| `GET` | `/cod` · `/cod/pending` · `/cod/intelligence` · `/sla-performance` | user | COD & delivery-SLA analytics |
+| `GET` | `/discrepancies/reconciliation` · `/disputes/claimable-rate` · `/disputes/lines` · `/disputes/invoices` | user | reconciliation & dispute detail |
 | `GET` | `/bills` | user | `?search=&status=&sort=&page=&page_size=` |
-| `GET` | `/savings-opportunity` · `/trend-recovery` | user | slow, separately cached |
-| `GET` | `/settings` | user | read-only config |
+| `GET` | `/savings-opportunity` | user | slow, separately cached |
+| `GET` | `/settings` · `/profile` | user | read-only config · current profile |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/users` | **admin** | user management |
-| `GET` | `/export` · `/export/{fmt}` | user / **non-viewer** | dataset catalog · CSV\|XLSX |
-| `GET` | `/_status` | user | live-vs-mock snapshot |
+| `GET` | `/export` · `/export/{fmt}` · `/disputes/{lines,invoices}/export/{fmt}` | user / **non-viewer** | dataset catalog · CSV\|XLSX |
+| `GET` | `/exports` · `/exports/{id}/download` | user | export history · re-download from disk |
+| `GET` | `/_status` | user | live-vs-unavailable snapshot |
 | `GET` | `/_meta/sources` | public | provenance map for badges |
 
 ## Deployment

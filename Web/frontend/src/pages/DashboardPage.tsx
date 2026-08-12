@@ -54,7 +54,7 @@ const BREAKDOWN_SEGMENTS = [
 const OTHERS_COLOR = "#64748b"; // slate — the merged "Others" donut slice
 
 export default function DashboardPage() {
-  const { data, isLoading, isError, error, refetch, dataUpdatedAt } = useDashboard();
+  const { data, isLoading, isFetching, isError, error, refetch, dataUpdatedAt } = useDashboard();
   const couriers = useCouriers();
   const pendingRecon = useDashboardRateDiff();
   const billing = useDashboardCourierBilling();
@@ -114,7 +114,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isLoading} />
+      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isFetching} />
       <div className="flex items-center justify-end">
         <Freshness updatedAt={dataUpdatedAt} />
       </div>
@@ -125,7 +125,7 @@ export default function DashboardPage() {
           ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="h-[150px] animate-pulse" />)
           : unavailable
           ? Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i} className="h-[150px]"><PanelUnavailable onRetry={() => refetch()} /></Card>
+              <Card key={i} className="h-[150px]"><PanelUnavailable onRetry={() => refetch()} retrying={isFetching} /></Card>
             ))
           : data.kpis.map((kpi) => (
               <KpiCard key={kpi.key} kpi={kpi} source={badge} basis={basisLine(data.date_field)} />

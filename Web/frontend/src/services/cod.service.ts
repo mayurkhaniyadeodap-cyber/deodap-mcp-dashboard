@@ -1,8 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
 import { useDateRange } from "@/store/dateRange.store";
 import type { CodIntelligenceResponse, CodPendingResponse, CodResponse } from "@/types/api";
 import { pollWhileUnavailable } from "@/utils/source";
+
+// keepPreviousData: keep each COD panel visible during a Retry/date change while it
+// refetches, updating as its own response lands (same data — loading UX only).
 
 /** GET /api/cod?from&to — COD KPIs + per-courier reconciliation. */
 export function useCod() {
@@ -10,6 +13,7 @@ export function useCod() {
   return useQuery({
     queryKey: ["cod", from, to],
     queryFn: async () => (await api.get<CodResponse>("/cod", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
 }
@@ -20,6 +24,7 @@ export function useCodPending() {
   return useQuery({
     queryKey: ["cod-pending", from, to],
     queryFn: async () => (await api.get<CodPendingResponse>("/cod/pending", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     staleTime: 60_000,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });
@@ -37,6 +42,7 @@ export function useCodIntelligence() {
   return useQuery({
     queryKey: ["cod-intelligence", from, to],
     queryFn: async () => (await api.get<CodIntelligenceResponse>("/cod/intelligence", { params: { from, to } })).data,
+    placeholderData: keepPreviousData,
     staleTime: 60_000,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
   });

@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     # Fail FAST into the "data unavailable" state instead of hanging a page for a
     # minute when the MCP is unreachable (was 30s → ~60s across retried transports).
     mcp_timeout_seconds: float = 12.0
+    # Global cap on SIMULTANEOUS real MCP round-trips (single-flight/cache hits do
+    # NOT take a slot). The Ship MCP contends badly under load — a ~5s tool balloons
+    # to ~18s when ~19 calls fire at once (which a Retry storm does). Bounding total
+    # concurrency to a conservative default keeps each round-trip fast. Tune via
+    # MCP_MAX_CONCURRENCY; it never reduces, skips, or samples data — only paces calls.
+    mcp_max_concurrency: int = 6
     # When the live MCP call fails we serve an honest "unavailable" state (empty
     # data, source="unavailable") — NEVER fixture numbers. This flag lets local dev
     # opt back into the mock fixtures; it must stay false in production.
