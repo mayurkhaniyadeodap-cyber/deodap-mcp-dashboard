@@ -17,7 +17,45 @@ from typing import Any
 
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
-from mcp.client.streamable_http import streamablehttp_client
+
+# `streamablehttp_client` was a DEPRECATED compatibility wrapper (it built an httpx
+# client from headers/timeout and delegated to the new `streamable_http_client`).
+# Newer MCP SDKs (>= the one production installed under the unpinned `mcp>=1.0`)
+# REMOVED that alias, breaking `from ... import streamablehttp_client` at startup.
+# Import it when present; otherwise reconstruct an equivalent wrapper over the new
+# `streamable_http_client(url, http_client=...)` API so every call site below stays
+# unchanged and the connection behaviour (headers, timeout) is identical.
+try:  # SDKs that still ship the deprecated alias
+    from mcp.client.streamable_http import streamablehttp_client
+except ImportError:  # newer SDKs: build the same wrapper ourselves
+    from contextlib import asynccontextmanager
+
+    import httpx
+    from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+
+    @asynccontextmanager
+    async def streamablehttp_client(  # type: ignore[misc]
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float | timedelta = 30,
+        sse_read_timeout: float | timedelta = 60 * 5,
+        terminate_on_close: bool = True,
+    ):
+        # Mirror the removed alias exactly: convert timeouts, build the httpx client
+        # with the SAME factory/params, then delegate to the new streaming client.
+        timeout_seconds = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+        sse_read_timeout_seconds = (
+            sse_read_timeout.total_seconds() if isinstance(sse_read_timeout, timedelta) else sse_read_timeout
+        )
+        client = create_mcp_http_client(
+            headers=headers,
+            timeout=httpx.Timeout(timeout_seconds, read=sse_read_timeout_seconds),
+        )
+        async with client:
+            async with streamable_http_client(
+                url, http_client=client, terminate_on_close=terminate_on_close
+            ) as streams:
+                yield streams
 
 from app.core.config import settings
 
