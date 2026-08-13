@@ -169,21 +169,35 @@ async def _execute(operation: Callable[[ClientSession], Awaitable[Any]]) -> Any:
     errors: list[str] = []
     for i in order:
         label, factory = strategies[i]
+        connected = False
         try:
             async with factory() as streams:
                 read, write = streams[0], streams[1]
                 async with ClientSession(read, write) as session:
                     async with asyncio.timeout(settings.mcp_timeout_seconds):
                         await session.initialize()
+                        # Connection + handshake proven good on THIS transport. Cache it
+                        # NOW — before running the operation — so that (a) every later
+                        # call skips straight to it instead of re-probing all strategies,
+                        # and (b) a failure below (e.g. a slow tool hitting the timeout)
+                        # is treated as a TOOL failure, not a transport failure.
+                        connected = True
+                        if _preferred_index != i:
+                            _preferred_index = i
+                            _last_transport = label
+                            logger.info("MCP connected via %s → %s", label, _mask(url))
                         result = await operation(session)
-            _preferred_index = i
-            _last_transport = label
-            logger.info("MCP connected via %s → %s", label, _mask(url))
             return result
-        except Exception as exc:  # noqa: BLE001 — collect and try the next strategy
+        except Exception as exc:  # noqa: BLE001
             msg = f"{label}: {type(exc).__name__}: {_mask(str(exc)) or '(no detail)'}{_http_status(exc)}"
             logger.warning("MCP attempt failed — %s", msg)
             errors.append(msg)
+            # The transport connected fine — the failure is the tool call itself (a slow
+            # tool timing out, or a tool error). Trying the OTHER transports would just
+            # hit the same tool and burn another timeout each, so surface it now instead
+            # of amplifying the delay (this is the failure-amplification fix).
+            if connected:
+                raise
 
     raise MCPUnavailableError("All MCP transport/auth attempts failed:\n  - " + "\n  - ".join(errors))
 
