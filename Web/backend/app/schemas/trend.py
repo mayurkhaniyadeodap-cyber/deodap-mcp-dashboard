@@ -24,6 +24,9 @@ class TrendResponse(BaseModel):
     by_month: list[dict[str, str | float]]
     # Month labels that are incomplete (rendered dashed / hollow).
     partial_months: list[str] = []
+    # Month labels whose data FAILED to load (MCP error). Returned so the month is shown
+    # as a gap with an "unavailable" note instead of being silently dropped.
+    failed_months: list[str] = []
     # Human description of what the chart actually covers (esp. for short ranges).
     window: str = ""
     source: Literal["live", "mock", "unavailable"] = "mock"

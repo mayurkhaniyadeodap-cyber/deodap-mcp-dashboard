@@ -17,6 +17,8 @@ from app.utils.mock import load_mock
 
 _cache = live_support.new_cache()
 _MAX_COURIERS = 8
+_OTHER_LABEL = "Other"  # aggregates couriers beyond the top-8 + the "(none)" bucket
+_NONE_KEY = "(none)"    # unassigned-courier costs, kept for the "Other" roll-up
 
 
 def _load_mock() -> TrendResponse:
@@ -26,26 +28,64 @@ def _load_mock() -> TrendResponse:
     return TrendResponse(daily=[], couriers=[], by_month=[], source="unavailable")
 
 
-async def _month_costs(label: str, ws: str, we: str, sem: asyncio.Semaphore) -> tuple[str, dict[str, float]] | None:
+async def _month_costs(label: str, ws: str, we: str, sem: asyncio.Semaphore) -> tuple[str, dict[str, float] | None]:
+    """Return (label, per-courier cost dict) for one month, or (label, None) if the MCP
+    call failed — the label is kept either way so a failed month is surfaced, not dropped.
+    "(none)"/unassigned costs are kept under _NONE_KEY so they roll into the "Other" bucket."""
     async with sem:
         try:
             d = live_support.parse_tool_json(
                 await mcp_client.call_tool("shipping_cost_summary", {"from": ws, "to": we, "group_by": "courier"})
             )
-        except Exception:  # noqa: BLE001 — a failed month is a gap, not fatal
-            return None
-    costs = {
-        _name_and_code(str(b.get("group")))[0]: round(float(b.get("total_cost", 0) or 0), 2)
-        for b in d.get("breakdown", []) or []
-        if b.get("group") and b.get("group") != "(none)"
-    }
+        except Exception:  # noqa: BLE001 — a failed month is surfaced (gap), not fatal
+            return label, None
+    costs: dict[str, float] = {}
+    for b in d.get("breakdown", []) or []:
+        g = b.get("group")
+        name = _NONE_KEY if (not g or g == "(none)") else _name_and_code(str(g))[0]
+        costs[name] = round(costs.get(name, 0.0) + float(b.get("total_cost", 0) or 0), 2)
     return label, costs
+
+
+def _pivot_by_month(
+    windows: list[tuple], month_costs: dict[str, dict[str, float]], failed: set[str]
+) -> tuple[list[str], list[dict[str, str | float]]]:
+    """Pure pivot for the monthly-billing chart. Returns (series, by_month):
+      • series = top-_MAX_COURIERS couriers by total cost, plus "Other" when any cost
+        falls outside the top-N (the 9th+ couriers or the "(none)" bucket) — so Σ series
+        == the month's full billing (no silent shortfall).
+      • by_month rows follow the window order; a FAILED month is emitted as {"month": lbl}
+        with no courier values (renders as a gap), never omitted."""
+    totals: dict[str, float] = {}
+    for costs in month_costs.values():
+        for c, v in costs.items():
+            totals[c] = totals.get(c, 0.0) + v
+    ranked = [c for c in sorted(totals, key=lambda k: (-totals[k], k)) if c != _NONE_KEY]
+    couriers = ranked[:_MAX_COURIERS]
+    top = set(couriers)
+    other_present = any(k not in top for k in totals)  # 9th+ courier or "(none)" present
+    series = couriers + ([_OTHER_LABEL] if other_present else [])
+
+    by_month: list[dict[str, str | float]] = []
+    for label, *_rest in windows:
+        if label in failed:
+            by_month.append({"month": label})  # failed → gap, no courier values
+            continue
+        if label not in month_costs:
+            continue
+        costs = month_costs[label]
+        row: dict[str, str | float] = {"month": label}
+        for c in couriers:
+            row[c] = round(costs.get(c, 0.0), 2)
+        if other_present:
+            row[_OTHER_LABEL] = round(sum(v for k, v in costs.items() if k not in top), 2)
+        by_month.append(row)
+    return series, by_month
 
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> TrendResponse:
     args = live_support.date_args(date_from, date_to)
     windows = month_windows(date_from, date_to)
-    partial_by_label = {w[0]: w[3] for w in windows}
     sem = asyncio.Semaphore(4)
     # daily_booking_trend is independent of the monthly windows → run it in the SAME
     # concurrent wave as the per-month cost calls (was sequential: daily THEN monthly).
@@ -60,35 +100,26 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> TrendRespon
         for d in daily_raw.get("days", []) or []
     ]
 
-    totals: dict[str, float] = {}
     month_costs: dict[str, dict[str, float]] = {}
-    for r in results:
-        if r is None:
-            continue
-        label, costs = r
-        month_costs[label] = costs
-        for courier, c in costs.items():
-            totals[courier] = totals.get(courier, 0) + c
+    failed: set[str] = set()
+    for label, costs in results:
+        if costs is None:
+            failed.add(label)  # surfaced as a gap below, never silently dropped
+        else:
+            month_costs[label] = costs
 
-    couriers = [c for c, _ in sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:_MAX_COURIERS]]
-    by_month: list[dict[str, str | float]] = []
-    for label, _ws, _we, _partial in windows:
-        if label not in month_costs:
-            continue  # failed month → gap (row omitted)
-        row: dict[str, str | float] = {"month": label}
-        for courier in couriers:
-            row[courier] = month_costs[label].get(courier, 0.0)
-        by_month.append(row)
-
-    partial_months = [lbl for lbl in month_costs if partial_by_label.get(lbl)]
+    couriers, by_month = _pivot_by_month(windows, month_costs, failed)
+    partial_months = [lbl for lbl, _ws, _we, partial in windows if partial and lbl in month_costs]
+    failed_months = [lbl for lbl, _ws, _we, _p in windows if lbl in failed]
     window = (
-        f"{windows[0][1]} → {windows[-1][2]} · {len(by_month)} month(s)"
-        if by_month else "no complete month in range"
+        f"{windows[0][1]} → {windows[-1][2]} · {len(month_costs)} month(s)"
+        if month_costs else "no complete month in range"
     )
 
     return TrendResponse(
         daily=daily, couriers=couriers, by_month=by_month,
-        partial_months=partial_months, window=window, source="live", date_field="order_date",
+        partial_months=partial_months, failed_months=failed_months,
+        window=window, source="live", date_field="order_date",
     )
 
 

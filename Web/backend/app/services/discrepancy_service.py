@@ -69,8 +69,18 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> Discrepancy
         mcp_client.call_tool("rto_analysis", args),
         mcp_client.call_tool("order_analytics", {**args, "group_by": "courier"}),
         mcp_client.call_tool("ndr_analysis", args),
+        return_exceptions=True,
     )
-    wr = live_support.parse_tool_json(wr_r)
+    # RTO% / NDR% are the core of this page → their tools are REQUIRED (a failure still
+    # falls back to the honest "unavailable" mock). weight_reconciliation_summary is
+    # OPTIONAL enrichment (the rate-difference panel only): it is the slow tool that
+    # intermittently times out, so if it fails we keep the page live and report
+    # reconciliation as absent (zeros / has_recon=False) instead of blanking RTO+NDR too.
+    # Nothing is fabricated — missing recon data simply reads as "no reconciliation data".
+    for r in (rto_r, oa_r, ndr_r):
+        if isinstance(r, Exception):
+            raise r
+    wr = {} if isinstance(wr_r, Exception) else live_support.parse_tool_json(wr_r)
     rto = live_support.parse_tool_json(rto_r)
     oa = live_support.parse_tool_json(oa_r)
     ndr = live_support.parse_tool_json(ndr_r)

@@ -27,6 +27,7 @@ from app.schemas.dashboard import (
 )
 from app.services import live_support, mcp_client
 from app.services.courier_service import _name_and_code
+from app.services.date_windows import window_maturing
 from app.services.order_sampling import sample_orders
 from app.services.zone_service import _canon_state
 from app.utils.mock import load_mock
@@ -102,16 +103,16 @@ _RATE_SUB = "disputed invoiced − applied · pending reconciliation · lags"
 
 
 def _rate_diff_mock() -> RateDiffKpi:
-    # date_field = reconciliation_at: this KPI's window filters on the reconciliation
-    # date (not order_date), so the UI can label its basis correctly.
+    # date_field = order_date: reconciliation_summary self-reports order_date, so the UI
+    # labels the basis correctly. maturing defaults False (no window/data here).
     if live_support.settings.use_mock_fallback:
         return RateDiffKpi(
             kpi=_kpi("rate_diff", _RATE_LABEL, 2749841.0, "currency", _RATE_SUB),
-            source="mock", date_field="reconciliation_at",
+            source="mock", date_field="order_date",
         )
     return RateDiffKpi(
         kpi=_kpi("rate_diff", _RATE_LABEL, 0.0, "currency", None, unavailable=True),
-        source="unavailable", date_field="reconciliation_at",
+        source="unavailable", date_field="order_date",
     )
 
 
@@ -124,11 +125,12 @@ async def _rate_diff_live(date_from: str | None, date_to: str | None) -> RateDif
     )
     disputed = next((b for b in r.get("breakdown", []) or [] if b.get("group") == "Disputed"), None)
     amt = float((disputed or r.get("totals") or {}).get("rate_diff", 0) or 0)
-    # No delta: reconciliation posts days late (by reconciliation_at), so a
-    # period-over-period delta would be a maturation artifact. Show the live value.
+    # No delta: reconciliation posts days late, so a period-over-period delta would be a
+    # maturation artifact. date_field=order_date (what the tool filters on); maturing
+    # flags a recent window whose figure is still rising as reconciliation posts.
     return RateDiffKpi(
         kpi=_kpi("rate_diff", _RATE_LABEL, amt, "currency", _RATE_SUB),
-        source="live", date_field="reconciliation_at",
+        source="live", date_field="order_date", maturing=window_maturing(date_to),
     )
 
 
@@ -155,7 +157,7 @@ _pending_recon_cache = live_support.new_cache()
 
 def _pending_reconciliation_mock() -> PendingReconciliationResponse:
     # Honest "unavailable" (zeros) on MCP failure — never a fabricated amount/count.
-    return PendingReconciliationResponse(source="unavailable", date_field="reconciliation_at")
+    return PendingReconciliationResponse(source="unavailable", date_field="order_date")
 
 
 async def _pending_reconciliation_live(
@@ -173,7 +175,8 @@ async def _pending_reconciliation_live(
     amount = float(src.get("rate_diff", 0) or 0)
     count = int((disputed or {}).get("rows", 0) or 0) if disputed is not None else int(totals.get("disputed", 0) or 0)
     return PendingReconciliationResponse(
-        amount=round(amount, 2), count=count, source="live", date_field="reconciliation_at"
+        amount=round(amount, 2), count=count, source="live",
+        date_field="order_date", maturing=window_maturing(date_to),
     )
 
 

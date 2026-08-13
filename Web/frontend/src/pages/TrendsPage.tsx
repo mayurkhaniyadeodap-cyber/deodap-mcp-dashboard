@@ -36,6 +36,8 @@ export default function TrendsPage() {
   const byMonth = data?.by_month ?? [];
   const couriers = data?.couriers ?? [];
   const partial = data?.partial_months ?? [];
+  const failed = data?.failed_months ?? [];
+  const topCount = couriers.filter((c) => c !== "Other").length;
   const rec = recovery.data;
   const recUnavailable = rec?.source === "unavailable";
 
@@ -141,7 +143,7 @@ export default function TrendsPage() {
       {/* Monthly billing by courier */}
       <ChartCard
         title="Monthly Billing by Courier"
-        description={`Courier cost per month · ${data?.window ?? ""}${partial.length ? ` · ${partial.join(", ")} partial (data still arriving)` : ""}`}
+        description={`Top ${topCount} couriers${couriers.includes("Other") ? ' + "Other"' : ""} · ${data?.window ?? ""}${partial.length ? ` · ${partial.join(", ")} partial (data still arriving)` : ""}${failed.length ? ` · ${failed.join(", ")} unavailable (failed to load)` : ""}`}
         loading={isLoading}
         unavailable={unavailable}
         onRetry={() => refetch()}
@@ -158,7 +160,9 @@ export default function TrendsPage() {
             {/* One smooth line per courier — same data (byMonth) & keys (couriers).
                 Markers on each point; names preserved for tooltip + legend. */}
             {couriers.map((c, i) => {
-              const color = CHART_SERIES[i % CHART_SERIES.length];
+              // "Other" (couriers beyond the top-8 + unassigned) renders as a muted grey
+              // line so it reads as an aggregate, not a specific courier.
+              const color = c === "Other" ? "#94a3b8" : CHART_SERIES[i % CHART_SERIES.length];
               return (
                 <Line
                   key={c}

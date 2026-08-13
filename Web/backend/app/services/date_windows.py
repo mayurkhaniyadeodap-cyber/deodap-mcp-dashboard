@@ -6,9 +6,14 @@ by today) is flagged partial.
 """
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+# Reconciliation posts ~2 weeks late (by reconciliation_at). A window whose END falls
+# inside that lag is still maturing → recon-derived figures are real but low. Shared so
+# the dashboard's reconciliation KPIs and the claimable KPI agree on the same threshold.
+RECON_LAG_DAYS = 14
 
 
 def _parse(d: str | None, fallback: date) -> date:
@@ -16,6 +21,14 @@ def _parse(d: str | None, fallback: date) -> date:
         return date.fromisoformat(d) if d else fallback
     except ValueError:
         return fallback
+
+
+def window_maturing(date_to: str | None, lag_days: int = RECON_LAG_DAYS) -> bool:
+    """True when the selected window END is within the reconciliation lag, so any
+    reconciliation-derived figure for it is still maturing (recent lines not yet
+    reconciled). Derived purely from the date — never from MCP data."""
+    end = _parse(date_to, date.today())
+    return end > date.today() - timedelta(days=lag_days)
 
 
 def month_windows(date_from: str | None, date_to: str | None) -> list[tuple[str, str, str, bool]]:
@@ -44,7 +57,10 @@ def month_windows(date_from: str | None, date_to: str | None) -> list[tuple[str,
         natural_end = date(y, m, last_day)
         ws = max(date(y, m, 1), start)
         we = min(natural_end, end, today)
-        partial = we < natural_end
+        # Partial when the window does not cover the whole calendar month: either the
+        # start is after the 1st (mid-month FROM → first month), or the end is before
+        # the month's natural end (mid-month TO / current month → last month).
+        partial = ws > date(y, m, 1) or we < natural_end
         label = f"{_MONTHS[m - 1]} {str(y)[2:]}" if multi_year else _MONTHS[m - 1]
         windows.append((label, ws.isoformat(), we.isoformat(), partial))
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)

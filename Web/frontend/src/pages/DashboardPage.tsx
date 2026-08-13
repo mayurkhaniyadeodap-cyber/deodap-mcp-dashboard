@@ -147,6 +147,12 @@ export default function DashboardPage() {
               delta: 0,
               delta_tone: "neutral",
               has_delta: false,
+              // Recent windows are still reconciling → flag it so the ₹ isn't read as
+              // final (it rises as reconciliation posts). Maturity comes from the date,
+              // not from MCP data.
+              subtitle: pendingRecon.data.maturing
+                ? "Recent window — still reconciling; figure will rise as data matures"
+                : undefined,
               // N/A only when the value is NOT live (MCP unavailable / mock) — never
               // display a non-live or hardcoded figure.
               unavailable: pendingRecon.data.source !== "live",
@@ -226,14 +232,14 @@ export default function DashboardPage() {
         {/* Forward Cost Breakdown — SAMPLED rate_summary (separate population from the
             population cost chart above). Fuel is folded into Base Freight. */}
         <ChartCard
-          title="Forward Cost Breakdown"
+          title={`Forward Cost Breakdown${billing.data && !billing.data.is_full ? " · Sampled" : ""}`}
           description={
             billing.data
               ? `${
                   billing.data.is_full
                     ? `All ${formatNumber(billing.data.sample_size)}`
-                    : `Sample of ${formatNumber(billing.data.sample_size)}`
-                } shipments · Fuel is included inside Base Freight (all-inclusive zone rate card).`
+                    : `Sample of ${formatNumber(billing.data.sample_size)} of ${formatNumber(billing.data.total_matched)}`
+                } shipments · sampled forward ₹ (RTO shown separately, not added in) · Fuel is inside Base Freight.`
               : "Sampled forward cost components per courier"
           }
           loading={false}

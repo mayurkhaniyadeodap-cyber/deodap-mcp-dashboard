@@ -1508,8 +1508,9 @@ export interface components {
          *       • amount = the ₹ rate difference on those lines (invoiced − applied) — the money
          *         pending reconciliation. This is the displayed KPI value.
          *       • count  = how many lines are pending (kept as additive context).
-         *     Reconciliation-book basis, so date_field = reconciliation_at. On MCP failure the
-         *     response is source='unavailable' with zeros — never fixture/sample values.
+         *     date_field = order_date (reconciliation_summary self-reports order_date). `maturing`
+         *     flags a recent window whose reconciliation is still posting (figure keeps rising).
+         *     On MCP failure the response is source='unavailable' with zeros — never fixtures.
          */
         PendingReconciliationResponse: {
             /**
@@ -1530,9 +1531,14 @@ export interface components {
             source: "live" | "mock" | "unavailable";
             /**
              * Date Field
-             * @default reconciliation_at
+             * @default order_date
              */
             date_field: string;
+            /**
+             * Maturing
+             * @default false
+             */
+            maturing: boolean;
         };
         /**
          * Preferences
@@ -1583,8 +1589,11 @@ export interface components {
         };
         /**
          * RateDiffKpi
-         * @description Isolated 'Rate Diff to Investigate' KPI (weight_reconciliation is slow, so
-         *     it is fetched separately from the main dashboard).
+         * @description Isolated 'Pending Reconciliation' rate-diff KPI (reconciliation_summary is slow,
+         *     so it is fetched separately from the main dashboard). date_field = order_date to
+         *     match what reconciliation_summary actually filters on (it self-reports order_date).
+         *     `maturing` = the window is recent enough that reconciliation is still posting, so
+         *     the figure will keep rising as data matures (derived from the date, not MCP).
          */
         RateDiffKpi: {
             kpi: components["schemas"]["Kpi"];
@@ -1596,9 +1605,14 @@ export interface components {
             source: "live" | "mock" | "unavailable";
             /**
              * Date Field
-             * @default reconciliation_at
+             * @default order_date
              */
             date_field: string;
+            /**
+             * Maturing
+             * @default false
+             */
+            maturing: boolean;
         };
         /** RateDispute */
         RateDispute: {
@@ -1913,6 +1927,11 @@ export interface components {
              * @default []
              */
             partial_months: string[];
+            /**
+             * Failed Months
+             * @default []
+             */
+            failed_months: string[];
             /**
              * Window
              * @default

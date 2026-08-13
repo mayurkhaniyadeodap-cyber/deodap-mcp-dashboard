@@ -130,8 +130,11 @@ async def _oa_cod_value(date_from: str, date_to: str) -> float:
 
 
 async def _remitted(date_from: str, date_to: str) -> float:
+    # Standardized on cod_remittance_aging.totals.remitted — the SAME tool/field the
+    # Dashboard "COD Remittance" KPI uses — so the COD page's remitted KPI and weekly
+    # series reconcile with the Dashboard exactly (was cod_remittance_summary).
     raw = live_support.parse_tool_json(
-        await mcp_client.call_tool("cod_remittance_summary", {"from": date_from, "to": date_to})
+        await mcp_client.call_tool("cod_remittance_aging", {"from": date_from, "to": date_to})
     )
     return float((raw.get("totals") or {}).get("remitted", 0) or 0)
 
@@ -153,14 +156,15 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
     results = await asyncio.gather(
         mcp_client.call_tool("order_analytics", {**args, "group_by": "courier"}),
         mcp_client.call_tool("cod_remittance_summary", args),
+        mcp_client.call_tool("cod_remittance_aging", args),
         mcp_client.call_tool("order_analytics", {**cur_args, "group_by": "courier"}),
         mcp_client.call_tool("order_analytics", {**prev_args, "group_by": "courier"}),
         *[_oa_cod_value(ws, we) for ws, we in windows],
         *[_remitted(ws, we) for ws, we in windows],
         return_exceptions=True,
     )
-    oa_r, cod_r, doa_c, doa_p = results[:4]
-    weekly_results = results[4:]
+    oa_r, cod_r, aging_r, doa_c, doa_p = results[:5]
+    weekly_results = results[5:]
     for r in (oa_r, cod_r):  # current required → mock fallback on failure
         if isinstance(r, Exception):
             raise r
@@ -169,6 +173,13 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
             raise r
     oa = live_support.parse_tool_json(oa_r)
     cod = live_support.parse_tool_json(cod_r)
+    # COD Remitted is standardized on cod_remittance_aging.totals.remitted so it equals the
+    # Dashboard "COD Remittance" KPI (same MCP tool + field). aging is OPTIONAL here: if it
+    # times out we fall back to the summary figure rather than blank the page.
+    aging_totals = (
+        {} if isinstance(aging_r, Exception)
+        else (live_support.parse_tool_json(aging_r).get("totals") or {})
+    )
 
     def _pv(r):
         return None if isinstance(r, Exception) else live_support.parse_tool_json(r)
@@ -181,6 +192,8 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
 
     oa_totals = oa.get("totals") or {}
     cod_totals = cod.get("totals") or {}
+    # Prefer aging.remitted (matches Dashboard); fall back to summary.remitted if aging failed.
+    remitted_val = float((aging_totals or cod_totals).get("remitted", 0) or 0)
     bs = {s.get("status"): s for s in cod.get("by_status", []) or []}
     pending_records = float((bs.get("Pending") or {}).get("records", 0) or 0)
 
@@ -188,7 +201,7 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> CodResponse
         # Volume metric → NEUTRAL tone (gray directional %), not a cost/efficiency signal.
         _delta_kpi("cod_value", "COD Value", float(oa_totals.get("cod_value", 0) or 0),
                    _codv(poa_c) if delta_ok else None, _codv(poa_p) if delta_ok else None, "currency", None),
-        _kpi("remitted", "COD Remitted", float(cod_totals.get("remitted", 0) or 0), "currency",
+        _kpi("remitted", "COD Remitted", remitted_val, "currency",
              subtitle=_SETTLEMENT_MATURITY),
         _kpi("cod_records", "COD Records", float(cod_totals.get("records", 0) or 0), "number"),
         _kpi("pending", "Pending Reconciliation Items", pending_records, "number",

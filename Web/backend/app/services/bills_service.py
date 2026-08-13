@@ -14,7 +14,8 @@ import math
 from app.schemas.bills import Bill, BillStatus
 from app.schemas.common import Page
 from app.services import live_support, mcp_client
-from app.services.courier_service import _name_and_code
+from app.services.courier_service import _SLUG_NAME, _name_and_code
+from app.services.zone_service import _CANON
 from app.utils.mock import load_mock
 
 logger = logging.getLogger("live")
@@ -48,6 +49,46 @@ def _all_bills() -> list[Bill]:
 def _matches_search(bill: Bill, query: str) -> bool:
     q = query.lower()
     return q in bill.awb.lower() or q in bill.courier.lower() or q in bill.zone.lower()
+
+
+# --- Live search routing -----------------------------------------------------
+# list_orders can't do free-text search, but it DOES filter natively by:
+#   awb (exact) · courier_slug (exact slug, case-insensitive) · customer_state (partial).
+# Routing the single search box to the right native filter makes search work across ALL
+# pages + statuses on LIVE data (the MCP does the filtering, paging, and counting).
+_STATE_NAMES_LOWER = tuple(s.lower() for s in _CANON)
+
+
+def _looks_like_state(term: str) -> bool:
+    """True when the term is a (partial) match of a canonical state name — so it routes
+    to the native customer_state filter rather than a same-spelled courier (e.g. the
+    zone "Delhi" vs the courier "Delhivery")."""
+    t = term.strip().lower()
+    return bool(t) and any(t in s for s in _STATE_NAMES_LOWER)
+
+
+def _resolve_courier_slug(term: str) -> str | None:
+    """Courier slug when `term` matches exactly ONE known courier (by slug or display
+    name, case-insensitive substring); None when it is ambiguous or unknown."""
+    t = term.strip().lower()
+    hits = {slug for slug, name in _SLUG_NAME.items() if t in slug.lower() or t in name.lower()}
+    return next(iter(hits)) if len(hits) == 1 else None
+
+
+def _search_filter(term: str | None) -> dict:
+    """Map the search box to ONE native list_orders filter. Precedence: a digit run is an
+    AWB (exact); a state name/prefix is a zone (partial, native); an unambiguous courier
+    name is a courier_slug; otherwise a partial state match. Empty term → no filter."""
+    t = (term or "").strip()
+    if not t:
+        return {}
+    if t.isdigit() and len(t) >= 4:
+        return {"awb": t}
+    if not _looks_like_state(t):
+        slug = _resolve_courier_slug(t)
+        if slug:
+            return {"courier_slug": slug}
+    return {"customer_state": t}
 
 
 def _sort_key(bill: Bill, field: str):
@@ -102,8 +143,10 @@ def _unavailable_page(*, page, page_size) -> Page[Bill]:
                 total_pages=1, source="unavailable")
 
 
-async def _fetch_live(*, status, page, page_size, date_from, date_to) -> Page[Bill]:
+async def _fetch_live(*, search_filter=None, status, page, page_size, date_from, date_to) -> Page[Bill]:
     args = live_support.date_args(date_from, date_to)
+    if search_filter:  # native list_orders filter (awb / courier_slug / customer_state)
+        args.update(search_filter)
     args["limit"] = page_size
     args["offset"] = (max(page, 1) - 1) * page_size
     if status is not None:
@@ -127,12 +170,14 @@ async def list_bills(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> Page[Bill]:
-    # Free-text search / non-default sort aren't supported by list_orders (the MCP).
-    # Serve those from committed demo data so the FEATURE keeps working, but label it
-    # source="sample" — it must NEVER appear under a LIVE badge. Default (date-desc)
-    # listing goes live.
-    live_capable = not search and (sort is None or sort in ("date:desc", "date"))
-    if not live_capable:
+    # SEARCH is served LIVE: list_orders filters natively by awb / courier_slug /
+    # customer_state, so the search box works across ALL pages + statuses on live data
+    # (the MCP does the filtering, paging and counting). Only an arbitrary COLUMN SORT
+    # stays unsupported by the tool → that path still falls back to committed demo data,
+    # labeled source="sample" so it NEVER appears under a LIVE badge.
+    search_filter = _search_filter(search)
+    non_default_sort = sort is not None and sort not in ("date:desc", "date")
+    if non_default_sort:
         return _mock_page(search=search, status=status, sort=sort, page=page,
                           page_size=page_size, date_from=date_from, date_to=date_to,
                           source="sample")
@@ -147,10 +192,11 @@ async def list_bills(
                               source="sample")
         return _unavailable_page(page=page, page_size=page_size)
 
-    key = (date_from, date_to, status.value if status else None, page, page_size)
+    key = (date_from, date_to, status.value if status else None, page, page_size,
+           tuple(sorted(search_filter.items())))
     return await live_support.live_or_mock(
         cache=_cache, key=key, label="bills",
-        fetch=lambda: _fetch_live(status=status, page=page, page_size=page_size,
-                                  date_from=date_from, date_to=date_to),
+        fetch=lambda: _fetch_live(search_filter=search_filter, status=status, page=page,
+                                  page_size=page_size, date_from=date_from, date_to=date_to),
         mock=_fallback,
     )

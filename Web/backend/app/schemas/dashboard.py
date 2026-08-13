@@ -70,12 +70,16 @@ class CourierBillingResponse(BaseModel):
 
 
 class RateDiffKpi(BaseModel):
-    """Isolated 'Rate Diff to Investigate' KPI (weight_reconciliation is slow, so
-    it is fetched separately from the main dashboard)."""
+    """Isolated 'Pending Reconciliation' rate-diff KPI (reconciliation_summary is slow,
+    so it is fetched separately from the main dashboard). date_field = order_date to
+    match what reconciliation_summary actually filters on (it self-reports order_date).
+    `maturing` = the window is recent enough that reconciliation is still posting, so
+    the figure will keep rising as data matures (derived from the date, not MCP)."""
 
     kpi: Kpi
     source: Literal["live", "mock", "unavailable"] = "mock"
-    date_field: str = "reconciliation_at"
+    date_field: str = "order_date"
+    maturing: bool = False
 
 
 class PendingReconciliationResponse(BaseModel):
@@ -85,10 +89,12 @@ class PendingReconciliationResponse(BaseModel):
       • amount = the ₹ rate difference on those lines (invoiced − applied) — the money
         pending reconciliation. This is the displayed KPI value.
       • count  = how many lines are pending (kept as additive context).
-    Reconciliation-book basis, so date_field = reconciliation_at. On MCP failure the
-    response is source='unavailable' with zeros — never fixture/sample values."""
+    date_field = order_date (reconciliation_summary self-reports order_date). `maturing`
+    flags a recent window whose reconciliation is still posting (figure keeps rising).
+    On MCP failure the response is source='unavailable' with zeros — never fixtures."""
 
     amount: float = 0.0
     count: int = 0
     source: Literal["live", "mock", "unavailable"] = "mock"
-    date_field: str = "reconciliation_at"
+    date_field: str = "order_date"
+    maturing: bool = False
