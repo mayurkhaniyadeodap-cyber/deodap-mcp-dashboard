@@ -295,14 +295,17 @@ async def render(
 
     if dataset == "all":
         sections = await _all_sections(date_from, date_to)
-        content, media_type = _render_all_bytes(sections, fmt)
+        # openpyxl/csv serialization is CPU-bound and SYNCHRONOUS — run it off the event
+        # loop so a big export doesn't freeze the single-worker backend (blocking every
+        # other request). Output bytes are byte-identical; only the thread changes.
+        content, media_type = await asyncio.to_thread(_render_all_bytes, sections, fmt)
         filename = _filename("all_data", fmt, date_from, date_to)
         record_count = sum(len(rows) for _, _, rows in sections)
     else:
         headers = _DATASETS[dataset]["headers"]
         rows = await _dataset_rows(dataset, date_from, date_to)
         filename = _filename(dataset, fmt, date_from, date_to)
-        content, media_type = _render_bytes(headers, rows, fmt, dataset)
+        content, media_type = await asyncio.to_thread(_render_bytes, headers, rows, fmt, dataset)
         record_count = len(rows)
 
     result = (content, media_type, filename, record_count)

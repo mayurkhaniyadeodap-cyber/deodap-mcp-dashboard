@@ -4,6 +4,8 @@ Writes are role-gated: Viewers cannot export (read-only). The mock produces a
 real downloadable file; Phase 2 only swaps the row source in the service.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 
 from app.api.deps import DateRange, date_range_params, get_current_user, require_role
@@ -48,15 +50,21 @@ async def export_file(
         )
     except Exception as exc:  # noqa: BLE001 — record the failure, then surface it
         base_filename = export_service._filename(dataset, fmt, dates.date_from, dates.date_to)
-        export_history_service.record_failure(
+        # to_thread: the history write does synchronous disk + DB I/O — keep it off the
+        # event loop so it never blocks other requests (SQLite check_same_thread=False).
+        await asyncio.to_thread(
+            export_history_service.record_failure,
             dataset=dataset, fmt=fmt, date_from=dates.date_from, date_to=dates.date_to,
             filename=export_service.with_download_stamp(base_filename), error=repr(exc),
         )
         raise
     # Stamp the ACTUAL download time onto the (cached) range-based filename, persist the
     # file + a completed history row, then return the download (behaviour unchanged).
+    # record_success does a synchronous path.write_bytes() + DB insert — run it in a
+    # worker thread so a large file write can't freeze the single-worker event loop.
     filename = export_service.with_download_stamp(base_filename)
-    export_history_service.record_success(
+    await asyncio.to_thread(
+        export_history_service.record_success,
         dataset=dataset, fmt=fmt, date_from=dates.date_from, date_to=dates.date_to,
         filename=filename, media_type=media_type, content=content, record_count=record_count,
     )
