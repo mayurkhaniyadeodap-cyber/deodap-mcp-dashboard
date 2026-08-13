@@ -13,52 +13,65 @@ import logging
 import time
 import weakref
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
+import httpx
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
-
-# `streamablehttp_client` was a DEPRECATED compatibility wrapper (it built an httpx
-# client from headers/timeout and delegated to the new `streamable_http_client`).
-# Newer MCP SDKs (>= the one production installed under the unpinned `mcp>=1.0`)
-# REMOVED that alias, breaking `from ... import streamablehttp_client` at startup.
-# Import it when present; otherwise reconstruct an equivalent wrapper over the new
-# `streamable_http_client(url, http_client=...)` API so every call site below stays
-# unchanged and the connection behaviour (headers, timeout) is identical.
-try:  # SDKs that still ship the deprecated alias
-    from mcp.client.streamable_http import streamablehttp_client
-except ImportError:  # newer SDKs: build the same wrapper ourselves
-    from contextlib import asynccontextmanager
-
-    import httpx
-    from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
-
-    @asynccontextmanager
-    async def streamablehttp_client(  # type: ignore[misc]
-        url: str,
-        headers: dict[str, str] | None = None,
-        timeout: float | timedelta = 30,
-        sse_read_timeout: float | timedelta = 60 * 5,
-        terminate_on_close: bool = True,
-    ):
-        # Mirror the removed alias exactly: convert timeouts, build the httpx client
-        # with the SAME factory/params, then delegate to the new streaming client.
-        timeout_seconds = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
-        sse_read_timeout_seconds = (
-            sse_read_timeout.total_seconds() if isinstance(sse_read_timeout, timedelta) else sse_read_timeout
-        )
-        client = create_mcp_http_client(
-            headers=headers,
-            timeout=httpx.Timeout(timeout_seconds, read=sse_read_timeout_seconds),
-        )
-        async with client:
-            async with streamable_http_client(
-                url, http_client=client, terminate_on_close=terminate_on_close
-            ) as streams:
-                yield streams
+from mcp.client.streamable_http import streamable_http_client
 
 from app.core.config import settings
+
+
+# MCP SDK transport compatibility -------------------------------------------------
+# The native streaming client is `streamable_http_client(url, *, http_client=None,
+# terminate_on_close=True)` — it accepts NEITHER `headers` NOR `timeout`; those lived
+# only on the old `streamablehttp_client` alias, which mcp 2.x removed. `_strategies()`
+# below still calls with the legacy `headers=`/`timeout=` signature, so we keep a thin
+# wrapper of that exact name + signature and adapt it to the native API. Because
+# `streamable_http_client` exists on BOTH the SDK we run locally (1.x) and the one in
+# production (2.0.0), this single path runs identically in both — no version-divergent
+# branch that could pass locally yet fail in prod (the previous failure mode).
+#
+# Auth is the URL query token (?mcp_token=...), so:
+#   - no-header path → call the native client directly; the SDK builds its own client
+#     with recommended MCP timeouts. This is the exact call verified working against
+#     the live server, so it is the PRIMARY streamable-HTTP transport.
+#   - header path → carry the header (+ timeout) on a plain httpx.AsyncClient passed
+#     via `http_client=` (the SDK-documented way to customise HTTP). We deliberately do
+#     NOT use `create_mcp_http_client(headers=…, timeout=…)`: that call is what raised
+#     the ExceptionGroup/TaskGroup under mcp 2.0.0. `httpx.AsyncClient(follow_redirects
+#     =True, timeout=…, headers=…)` reproduces exactly what that factory built.
+@asynccontextmanager
+async def streamablehttp_client(
+    url: str,
+    headers: dict[str, str] | None = None,
+    timeout: float | timedelta = 30,
+    sse_read_timeout: float | timedelta = 60 * 5,
+    terminate_on_close: bool = True,
+):
+    if not headers:
+        # PRIMARY transport (URL-token auth) — native call, SDK-managed client.
+        async with streamable_http_client(url, terminate_on_close=terminate_on_close) as streams:
+            yield streams
+        return
+    # Header-auth fallback: a plain httpx client carries the header + timeouts.
+    timeout_seconds = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+    sse_read_timeout_seconds = (
+        sse_read_timeout.total_seconds() if isinstance(sse_read_timeout, timedelta) else sse_read_timeout
+    )
+    client = httpx.AsyncClient(
+        headers=headers,
+        timeout=httpx.Timeout(timeout_seconds, read=sse_read_timeout_seconds),
+        follow_redirects=True,
+    )
+    async with client:
+        async with streamable_http_client(
+            url, http_client=client, terminate_on_close=terminate_on_close
+        ) as streams:
+            yield streams
 
 logger = logging.getLogger("mcp_client")
 # Dedicated perf logger so timing output can be toggled independently:
