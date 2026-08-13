@@ -243,10 +243,26 @@ async def _mcp_header() -> tuple[bool, int, list[Capability]]:
         return False, 0, []
 
 
+# Probe only a few endpoints at a time instead of all 9 at once. Firing every probe
+# together kept the shared 6-slot MCP pool saturated for the whole probe, so the slow
+# weight_reconciliation_summary (used by /api/weight and /api/discrepancies) ran under
+# full contention and blew past the 30s timeout. A small cap lets each heavy endpoint
+# run against a lighter server (its own fast sibling calls drain quickly) and — via
+# single-flight + the 60s tool cache — lets a computed tool be reused by later probes.
+# This ONLY changes GET /api/_status; the real dashboard endpoints are untouched.
+_PROBE_CONCURRENCY = 2
+
+
 async def _fetch(include_slow: bool) -> StatusResponse:
     specs = [s for s in _specs() if include_slow or not s[4]]
     header_task = asyncio.create_task(_mcp_header())
-    probes = await asyncio.gather(*[_probe(ep, tools, notes, fn) for ep, tools, notes, fn, _slow in specs])
+    sem = asyncio.Semaphore(_PROBE_CONCURRENCY)
+
+    async def _bounded(ep, tools, notes, fn):
+        async with sem:
+            return await _probe(ep, tools, notes, fn)
+
+    probes = await asyncio.gather(*[_bounded(ep, tools, notes, fn) for ep, tools, notes, fn, _slow in specs])
     mcp_connected, tool_count, capabilities = await header_task
     return StatusResponse(
         mcp_connected=mcp_connected,
