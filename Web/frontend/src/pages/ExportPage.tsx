@@ -7,7 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useHasRole } from "@/routes/RoleGuard";
 import { apiErrorMessage } from "@/services/api";
-import { useExportCatalog, useExportDownload, useExportHistory, useHistoryDownload } from "@/services/export.service";
+import { useExportCatalog, useExportHistory, useHistoryDownload } from "@/services/export.service";
+import { useExportStatus } from "@/store/exportStatus";
 import type { ExportHistoryOut } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { formatDateTimeIST, formatNumber } from "@/utils/format";
@@ -16,7 +17,7 @@ type Fmt = "csv" | "xlsx";
 
 export default function ExportPage() {
   const { data, isLoading, isError, refetch } = useExportCatalog();
-  const download = useExportDownload();
+  const { isExporting, startExport } = useExportStatus();
   const history = useExportHistory();
   const historyDownload = useHistoryDownload();
   const { toast } = useToast();
@@ -32,15 +33,10 @@ export default function ExportPage() {
   if (isError) return <PageError onRetry={() => refetch()} />;
 
   const onExport = () => {
-    download.mutate(
-      { dataset, fmt },
-      {
-        onSuccess: (filename) =>
-          toast({ title: "Export ready", description: `${filename} downloaded.`, variant: "success" }),
-        onError: (err) =>
-          toast({ title: "Export failed", description: apiErrorMessage(err), variant: "error" }),
-      },
-    );
+    // Runs via the app-level provider so the export keeps going (and its toast fires)
+    // even if the user navigates away; the success/error toast lives there now.
+    const label = data?.datasets.find((d) => d.key === dataset)?.label ?? dataset;
+    startExport({ dataset, fmt, label });
   };
 
   return (
@@ -94,8 +90,8 @@ export default function ExportPage() {
         <p className="text-sm text-muted-foreground">
           {data?.datasets.find((d) => d.key === dataset)?.label ?? "—"} · {fmt.toUpperCase()}
         </p>
-        <Button onClick={onExport} disabled={!canExport || !dataset || download.isPending}>
-          {download.isPending ? (
+        <Button onClick={onExport} disabled={!canExport || !dataset || isExporting}>
+          {isExporting ? (
             <>
               <Loader2 className="animate-spin" /> Exporting…
             </>

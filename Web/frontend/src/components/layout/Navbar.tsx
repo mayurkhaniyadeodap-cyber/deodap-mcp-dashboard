@@ -1,11 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Download, Menu, PanelLeft, RefreshCw } from "lucide-react";
+import { ChevronRight, Download, Loader2, Menu, PanelLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { resolvePageMeta } from "@/config/nav";
 import { cn } from "@/lib/utils";
 import { RoleGuard } from "@/routes/RoleGuard";
+import { useExportStatus } from "@/store/exportStatus";
 import { useUIStore } from "@/store/ui.store";
 import { DateRangePicker } from "./DateRangePicker";
 import { ProfileMenu } from "./ProfileMenu";
@@ -20,6 +21,7 @@ export function Navbar() {
 
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  const { isExporting, label } = useExportStatus();
 
   const onRefresh = async () => {
     if (refreshing) return;
@@ -70,6 +72,16 @@ export function Navbar() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Global export indicator — persists across navigation while an export runs. */}
+        {isExporting && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground"
+            title={label ? `Exporting ${label}…` : "An export is running"}
+          >
+            <Loader2 className="size-3.5 animate-spin" />
+            <span className="hidden sm:inline">Exporting…</span>
+          </span>
+        )}
         <DateRangePicker />
         <RoleGuard allow={["admin", "employee"]}>
           <Link to="/export" className={buttonVariants({ variant: "outline", size: "sm", className: "hidden sm:inline-flex" })}>

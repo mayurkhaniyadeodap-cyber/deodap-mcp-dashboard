@@ -75,9 +75,12 @@ class Settings(BaseSettings):
     # NOT a Bearer header. Blank token => services fall back to mock data.
     mcp_url: str = ""
     mcp_token: str = ""
-    # Fail FAST into the "data unavailable" state instead of hanging a page for a
-    # minute when the MCP is unreachable (was 30s → ~60s across retried transports).
-    mcp_timeout_seconds: float = 12.0
+    # Per-MCP-call timeout. The two heaviest Ship tools (weight_reconciliation_summary,
+    # cod_remittance_summary) have real latency at/above 12s, so a 12s cap timed them
+    # out and made /api/cod, /api/weight and /api/discrepancies report "unavailable".
+    # 30s clears their latency with headroom while still failing well before a page
+    # would truly hang. Override via MCP_TIMEOUT_SECONDS in the env.
+    mcp_timeout_seconds: float = 30.0
     # Global cap on SIMULTANEOUS real MCP round-trips (single-flight/cache hits do
     # NOT take a slot). The Ship MCP contends badly under load — a ~5s tool balloons
     # to ~18s when ~19 calls fire at once (which a Retry storm does). Bounding total

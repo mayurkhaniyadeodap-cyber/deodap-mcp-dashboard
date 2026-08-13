@@ -27,6 +27,8 @@ credentials.*
 *.sqlite3
 *.db-journal
 data/
+# Runtime-generated export files (CSV/XLSX written on disk by the export feature).
+Web/backend/exports/
 
 # ---- Python ----------------------------------------------------------------
 venv/

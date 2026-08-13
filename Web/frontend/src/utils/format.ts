@@ -55,12 +55,30 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-IN", {
   minute: "2-digit",
 });
 
-/** 07 Jul 2026 (IST). Accepts an ISO string, epoch ms, or Date. */
-export function formatDateIST(input: string | number | Date): string {
-  return dateFormatter.format(new Date(input));
+/**
+ * Build a Date, treating a timezone-naive ISO *datetime* as UTC. Backend datetimes
+ * are UTC but serialized WITHOUT a marker (datetime.utcnow() → "2026-08-13T04:22:59"),
+ * which `new Date()` would otherwise parse as LOCAL time and mis-convert. We append
+ * "Z" so the Asia/Kolkata formatters convert correctly — no hardcoded +5:30. Epoch
+ * numbers, Date objects, date-only strings, and already-zoned strings are untouched.
+ */
+function toDate(input: string | number | Date): Date {
+  if (
+    typeof input === "string" &&
+    /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(input) && // has a time component
+    !/[zZ]|[+-]\d{2}:?\d{2}$/.test(input) // …but no timezone marker
+  ) {
+    return new Date(`${input.replace(" ", "T")}Z`);
+  }
+  return new Date(input);
 }
 
-/** 07 Jul 2026, 03:45 pm (IST). */
+/** 07 Jul 2026 (IST). Accepts an ISO string, epoch ms, or Date. */
+export function formatDateIST(input: string | number | Date): string {
+  return dateFormatter.format(toDate(input));
+}
+
+/** 07 Jul 2026, 03:45 pm (IST). Naive backend datetimes are treated as UTC. */
 export function formatDateTimeIST(input: string | number | Date): string {
-  return dateTimeFormatter.format(new Date(input));
+  return dateTimeFormatter.format(toDate(input));
 }
