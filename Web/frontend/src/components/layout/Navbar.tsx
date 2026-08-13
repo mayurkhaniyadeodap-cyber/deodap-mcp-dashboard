@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Download, Loader2, Menu, PanelLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -22,6 +22,10 @@ export function Navbar() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const { isExporting, label } = useExportStatus();
+  // Any live query in flight — e.g. after a date-range change, every page's data
+  // refetches for the new dates. keepPreviousData keeps the old numbers on screen, so
+  // this is the cue that fresh-range data is loading (it clears when the fetch lands).
+  const fetching = useIsFetching();
 
   const onRefresh = async () => {
     if (refreshing) return;
@@ -72,6 +76,17 @@ export function Navbar() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Data-updating cue — shown while queries refetch (e.g. after a date-range
+            change); the previous numbers stay visible until the new range lands. */}
+        {fetching > 0 && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground"
+            title="Loading data for the selected date range…"
+          >
+            <RefreshCw className="size-3.5 animate-spin" />
+            <span className="hidden sm:inline">Updating…</span>
+          </span>
+        )}
         {/* Global export indicator — persists across navigation while an export runs. */}
         {isExporting && (
           <span
