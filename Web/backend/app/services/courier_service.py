@@ -108,6 +108,15 @@ def _map_courier(perf: dict, cost: dict, rto_pct: float, cod_value: float,
 
 async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courier]:
     args = live_support.date_args(date_from, date_to)
+    # All 6 tools run concurrently (unchanged). The first 4 are CORE — they drive the
+    # displayed values (rows, freight/RTO cost, RTO%), so a failure there is a real
+    # outage and must still degrade to "unavailable". The last 2 are ENRICHMENT only
+    # (remitted, reconciliation status) — columns the mapping below already defaults to
+    # "N/A"/Pending when a courier is absent. `reconciliation_summary` is the slow,
+    # variable tool that intermittently exceeds the timeout; tolerate an enrichment
+    # failure (return_exceptions) so ONE slow tool can no longer blank the whole
+    # Courier Comparison page. Nothing is fabricated — a failed enrichment just leaves
+    # its columns empty, exactly as an absent courier already does.
     perf_raw, cost_raw, rto_raw, oa_raw, aging_raw, recon_raw = await asyncio.gather(
         mcp_client.call_tool("courier_performance", {**args}),
         mcp_client.call_tool("shipping_cost_summary", {"group_by": "courier", **args}),
@@ -115,7 +124,16 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
         mcp_client.call_tool("order_analytics", {"group_by": "courier", **args}),
         mcp_client.call_tool("cod_remittance_aging", {"group_by": "courier", **args}),
         mcp_client.call_tool("reconciliation_summary", {"group_by": "courier", **args}),
+        return_exceptions=True,
     )
+    for _core in (perf_raw, cost_raw, rto_raw, oa_raw):
+        if isinstance(_core, Exception):
+            raise _core
+
+    # Enrichment breakdown — empty (→ every courier defaults to N/A / Pending) when its
+    # tool timed out or errored above. Never fabricated.
+    def _breakdown(raw) -> list:
+        return [] if isinstance(raw, Exception) else (live_support.parse_tool_json(raw).get("breakdown", []) or [])
 
     perf_rows = live_support.parse_tool_json(perf_raw).get("couriers", []) or []
     cost_by_slug = {b.get("group"): b for b in live_support.parse_tool_json(cost_raw).get("breakdown", []) or []}
@@ -128,13 +146,13 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> list[Courie
     # so join on the normalized name. Absent courier → None → "N/A" (never faked).
     remitted_by_norm = {
         _norm(b.get("group", "")): float(b.get("remitted", 0) or 0)
-        for b in live_support.parse_tool_json(aging_raw).get("breakdown", []) or []
+        for b in _breakdown(aging_raw)
     }
     # Per-courier reconciliation status (Reconciled / Pending / Disputed). Same
     # DISPLAY-name grouping → join on the normalized name.
     recon_by_norm = {
         _norm(b.get("group", "")): b
-        for b in live_support.parse_tool_json(recon_raw).get("breakdown", []) or []
+        for b in _breakdown(recon_raw)
     }
 
     mapped = []
