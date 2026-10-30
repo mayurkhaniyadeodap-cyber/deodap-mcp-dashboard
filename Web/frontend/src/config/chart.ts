@@ -5,6 +5,8 @@
  * same chart reads correctly in both the dark and light theme.
  */
 export const CHART_COLORS = {
+  /** Brand teal (matches --primary) for the dashboard's headline series. */
+  brand: "#14b8a6",
   blue: "#3b82f6",
   cyan: "#06b6d4",
   green: "#10b981",

@@ -13,7 +13,7 @@ import { badgeFromSource } from "@/utils/source";
 // are always ₹0 and folded into the all-inclusive base freight → never their own
 // series (there's no live Fuel source).
 const SEGMENTS = [
-  { key: "base_freight", label: "Base Freight", color: CHART_COLORS.blue },
+  { key: "base_freight", label: "Base Freight", color: CHART_COLORS.brand },
   { key: "gst", label: "GST", color: CHART_COLORS.amber },
   { key: "cod_charges", label: "COD Charges", color: CHART_COLORS.green },
 ] as const;

@@ -9,63 +9,62 @@
   HSL triplets in shadcn's variable convention, so every component (and
   `pnpm dlx shadcn add …`) reads the same semantic names in both themes.
 
-  Dark (default):  bg #061426 · sidebar #081A30 · surface #0D2038 · elevated #122A46
-                   border #1F3A59 · text #F1F5FF / #9FB2CC · primary #3B82F6
-  Light:           bg #F5F8FD · surface #FFFFFF · border #DCE6F2
-                   text #10213D / #64748B · primary #2563EB · subtle blue #EAF2FF
-  Sidebar: deep navy in dark, white in light; the active item is a solid blue pill.
+  "Ocean Teal" palette — teal primary, per-KPI accent colours.
+  Dark (default):  bg #06161A · sidebar #071B20 · surface #0D242A · primary #12A594
+  Light:           bg #F4F9F9 · surface #FFFFFF · border #DCECEC · primary #0C8A7E
+  Sidebar: deep sea-green in dark, white in light; the active item is a teal-to-cyan pill.
 */
 :root,
 .dark {
-  --background: 214 73% 9%; /* #061426 */
-  --foreground: 223 100% 97%; /* #F1F5FF */
+  --background: 191 62% 6%; /* #06161A deep sea */
+  --foreground: 170 75% 95%;
 
-  --card: 213 62% 14%; /* #0D2038 */
-  --card-to: 213 64% 12%; /* gradient bottom, a touch deeper */
-  --card-foreground: 223 100% 97%;
-  --elevated: 212 59% 17%; /* #122A46 — menus, tooltips, hover rows */
+  --card: 192 53% 11%; /* #0D242A */
+  --card-to: 192 55% 9%;
+  --card-foreground: 170 75% 95%;
+  --elevated: 191 45% 15%;
 
-  --popover: 212 59% 17%;
-  --popover-foreground: 223 100% 97%;
+  --popover: 191 45% 15%;
+  --popover-foreground: 170 75% 95%;
 
-  --primary: 217 91% 60%; /* #3B82F6 */
+  --primary: 174 80% 36%; /* #12A594 teal */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 212 52% 20%;
-  --secondary-foreground: 223 100% 97%;
+  --secondary: 191 42% 16%;
+  --secondary-foreground: 170 75% 95%;
 
-  --muted: 212 52% 20%;
-  --muted-foreground: 215 31% 71%; /* #9FB2CC */
+  --muted: 191 42% 16%;
+  --muted-foreground: 180 20% 67%;
 
-  --accent: 212 55% 21%;
-  --accent-foreground: 223 100% 97%;
+  --accent: 191 40% 17%;
+  --accent-foreground: 170 75% 95%;
 
-  --destructive: 0 91% 71%; /* soft red #F87171 */
-  --destructive-foreground: 214 73% 9%;
+  --destructive: 351 89% 69%;
+  --destructive-foreground: 191 62% 6%;
 
-  --border: 212 48% 24%; /* #1F3A59 */
-  --input: 212 48% 24%;
-  --ring: 217 91% 60%;
+  --border: 191 40% 18%;
+  --input: 191 40% 18%;
+  --ring: 174 72% 46%;
 
   /* Status — same hues as light, lifted for contrast on navy */
-  --success: 158 64% 52%; /* #34D399 */
-  --warning: 43 96% 56%; /* #FBBF24 */
-  --info: 217 91% 65%;
-  --purple: 258 90% 72%;
-  --cyan: 189 85% 53%;
-  --pink: 330 81% 66%;
+  --success: 158 64% 52%;
+  --warning: 38 95% 60%;
+  --info: 199 89% 62%;
+  --purple: 262 90% 74%;
+  --cyan: 187 85% 55%;
+  --pink: 330 85% 68%;
 
   /* Sidebar */
-  --sidebar: 213 71% 11%; /* #081A30 */
-  --sidebar-foreground: 223 100% 97%;
-  --sidebar-muted: 215 28% 66%;
-  --sidebar-accent: 212 55% 18%;
-  --sidebar-border: 212 50% 17%;
+  --sidebar: 192 64% 8%;
+  --sidebar-foreground: 170 75% 95%;
+  --sidebar-muted: 180 18% 66%;
+  --sidebar-accent: 191 45% 13%;
+  --sidebar-border: 191 45% 13%;
 
   /* Charts */
-  --chart-grid: 212 48% 20%;
-  --chart-axis: 212 40% 32%;
-  --chart-tick: 215 31% 71%;
+  --chart-grid: 191 40% 14%;
+  --chart-axis: 191 30% 26%;
+  --chart-tick: 180 20% 67%;
 
   --shadow-card: 0 1px 2px 0 rgb(1 8 20 / 0.45), 0 1px 3px 0 rgb(1 8 20 / 0.3);
   --shadow-card-hover: 0 12px 28px -10px rgb(1 8 20 / 0.7), 0 2px 6px -2px rgb(1 8 20 / 0.4);
@@ -75,52 +74,52 @@
 
 /* Light theme. The theme store toggles `.light` on <html> (dark stays the default). */
 .light {
-  --background: 218 66% 98%; /* #F5F8FD */
-  --foreground: 217 58% 15%; /* #10213D */
+  --background: 180 33% 97%; /* #F4F9F9 */
+  --foreground: 184 49% 12%;
 
   --card: 0 0% 100%;
   --card-to: 0 0% 100%;
-  --card-foreground: 217 58% 15%;
+  --card-foreground: 184 49% 12%;
   --elevated: 0 0% 100%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 217 58% 15%;
+  --popover-foreground: 184 49% 12%;
 
-  --primary: 221 83% 53%; /* #2563EB */
+  --primary: 175 84% 29%; /* #0C8A7E teal */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 217 100% 96%; /* #EAF2FF */
-  --secondary-foreground: 217 58% 20%;
+  --secondary: 174 60% 95%;
+  --secondary-foreground: 184 49% 18%;
 
-  --muted: 214 60% 95%;
-  --muted-foreground: 215 19% 42%; /* slate, darkened from #64748B for AA on white */
+  --muted: 180 30% 95%;
+  --muted-foreground: 184 15% 39%;
 
-  --accent: 217 100% 96%;
-  --accent-foreground: 217 58% 18%;
+  --accent: 174 60% 95%;
+  --accent-foreground: 184 49% 16%;
 
-  --destructive: 0 72% 51%; /* #DC2626 — AA as text on white */
+  --destructive: 350 75% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 213 46% 91%; /* #DCE6F2 */
-  --input: 213 46% 88%;
-  --ring: 221 83% 53%;
+  --border: 180 30% 89%;
+  --input: 180 30% 86%;
+  --ring: 175 84% 29%;
 
-  --success: 161 94% 30%; /* #059669 — AA as text on white */
-  --warning: 32 95% 44%; /* #D97706 */
-  --info: 221 83% 53%;
+  --success: 161 94% 30%;
+  --warning: 32 95% 44%;
+  --info: 199 89% 40%;
   --purple: 262 83% 58%;
   --cyan: 192 91% 36%;
   --pink: 333 71% 51%;
 
   --sidebar: 0 0% 100%;
-  --sidebar-foreground: 217 58% 15%;
-  --sidebar-muted: 215 19% 40%;
-  --sidebar-accent: 217 100% 96%;
-  --sidebar-border: 213 46% 91%;
+  --sidebar-foreground: 184 49% 12%;
+  --sidebar-muted: 184 15% 38%;
+  --sidebar-accent: 174 60% 95%;
+  --sidebar-border: 180 30% 89%;
 
-  --chart-grid: 213 46% 92%;
-  --chart-axis: 213 30% 80%;
-  --chart-tick: 215 19% 42%;
+  --chart-grid: 180 30% 92%;
+  --chart-axis: 180 20% 78%;
+  --chart-tick: 184 15% 39%;
 
   --shadow-card: 0 1px 2px 0 rgb(16 33 61 / 0.04), 0 1px 3px 0 rgb(16 33 61 / 0.06);
   --shadow-card-hover: 0 12px 28px -12px rgb(16 33 61 / 0.18), 0 2px 6px -2px rgb(16 33 61 / 0.06);

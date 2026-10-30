@@ -41,7 +41,7 @@ function SidebarContent({
       {/* Brand */}
       <div className={cn("flex h-[68px] shrink-0 items-center px-4", collapsed ? "justify-center" : "justify-between")}>
         <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-[0_4px_14px_-4px_rgb(37_99_235/0.6)]">
+          <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-teal-400 to-[#0891b2] text-white shadow-[0_4px_14px_-4px_rgb(20_184_166/0.6)]">
             <Boxes className="size-5" />
           </div>
           {!collapsed && (
@@ -161,7 +161,7 @@ function SidebarLink({
           "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150",
           collapsed && "justify-center px-0",
           isActive
-            ? "bg-primary text-white shadow-[0_6px_16px_-6px_rgb(37_99_235/0.7)]"
+            ? "bg-gradient-to-r from-teal-600 to-[#0891b2] text-white shadow-[0_6px_16px_-6px_rgb(20_184_166/0.7)]"
             : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
         )
       }

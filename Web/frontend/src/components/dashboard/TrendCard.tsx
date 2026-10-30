@@ -114,8 +114,8 @@ export function TrendCard({ data, loading, failed, onRetry, updatedAt, className
           <AreaChart data={monthly} margin={{ left: 0, right: 8, top: 6, bottom: 0 }} accessibilityLayer>
             <defs>
               <linearGradient id="trend-billed" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor={CHART_COLORS.blue} stopOpacity={0.35} />
-                <stop offset="100%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
+                <stop offset="0%" stopColor={CHART_COLORS.brand} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={CHART_COLORS.brand} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} strokeDasharray="3 3" />
@@ -126,10 +126,10 @@ export function TrendCard({ data, loading, failed, onRetry, updatedAt, className
               type="monotone"
               dataKey="billed"
               name="Billed Amount"
-              stroke={CHART_COLORS.blue}
+              stroke={CHART_COLORS.brand}
               strokeWidth={2.5}
               fill="url(#trend-billed)"
-              dot={{ r: 3, strokeWidth: 0, fill: CHART_COLORS.blue }}
+              dot={{ r: 3, strokeWidth: 0, fill: CHART_COLORS.brand }}
               activeDot={{ r: 5 }}
               connectNulls={false}
               isAnimationActive={!reduced}
@@ -140,8 +140,8 @@ export function TrendCard({ data, loading, failed, onRetry, updatedAt, className
           <AreaChart data={daily} margin={{ left: 0, right: 0, top: 6, bottom: 0 }} accessibilityLayer>
             <defs>
               <linearGradient id="trend-value" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
+                <stop offset="0%" stopColor={CHART_COLORS.brand} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={CHART_COLORS.brand} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} strokeDasharray="3 3" />
@@ -149,7 +149,7 @@ export function TrendCard({ data, loading, failed, onRetry, updatedAt, className
             <YAxis yAxisId="value" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} tickFormatter={(v) => formatCurrencyINRShort(Number(v))} width={56} tickLine={false} axisLine={false} />
             <YAxis yAxisId="orders" orientation="right" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} tickFormatter={(v) => formatNumber(Number(v))} width={44} tickLine={false} axisLine={false} />
             <Tooltip content={<ChartTooltip valueFormatter={(v, name) => (name === "Orders" ? formatNumber(v) : formatCurrencyINR(v))} />} />
-            <Area yAxisId="value" type="monotone" dataKey="value" name="Order value" stroke={CHART_COLORS.blue} strokeWidth={2.5} fill="url(#trend-value)" dot={false} activeDot={{ r: 4 }} isAnimationActive={!reduced} animationDuration={900} />
+            <Area yAxisId="value" type="monotone" dataKey="value" name="Order value" stroke={CHART_COLORS.brand} strokeWidth={2.5} fill="url(#trend-value)" dot={false} activeDot={{ r: 4 }} isAnimationActive={!reduced} animationDuration={900} />
             <Area yAxisId="orders" type="monotone" dataKey="orders" name="Orders" stroke={CHART_COLORS.amber} strokeWidth={2} fill="none" dot={false} activeDot={{ r: 4 }} isAnimationActive={!reduced} animationDuration={900} />
           </AreaChart>
         )}

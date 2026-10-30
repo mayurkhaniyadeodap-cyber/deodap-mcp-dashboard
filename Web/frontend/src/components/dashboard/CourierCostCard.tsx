@@ -59,12 +59,12 @@ export function CourierCostCard({ couriers, loading, unavailable, onRetry, sourc
         <BarChart data={rows} margin={{ left: 0, right: 4, top: 4, bottom: 0 }} barCategoryGap="28%" accessibilityLayer>
           <defs>
             <linearGradient id="cc-forward" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" />
-              <stop offset="100%" stopColor="#1d4ed8" />
+              <stop offset="0%" stopColor="#2dd4bf" />
+              <stop offset="100%" stopColor="#0d9488" />
             </linearGradient>
             <linearGradient id="cc-rto" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#a5b4fc" />
-              <stop offset="100%" stopColor="#818cf8" />
+              <stop offset="0%" stopColor="#fcd34d" />
+              <stop offset="100%" stopColor="#f59e0b" />
             </linearGradient>
           </defs>
           <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} strokeDasharray="3 3" />

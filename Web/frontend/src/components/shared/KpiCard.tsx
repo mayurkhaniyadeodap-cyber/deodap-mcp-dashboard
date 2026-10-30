@@ -63,6 +63,21 @@ const KPI_ICON: Record<string, LucideIcon> = {
 
 const kpiIcon = (key: string): LucideIcon => KPI_ICON[key] ?? Wallet;
 
+/** Per-KPI accent: icon tile classes + sparkline colour. Unlisted keys use the brand teal. */
+interface Tone {
+  tile: string;
+  line: string;
+}
+const BRAND: Tone = { tile: "bg-primary/10 text-primary dark:bg-primary/15", line: "hsl(var(--primary))" };
+const KPI_TONE: Record<string, Tone> = {
+  total_billing: BRAND,
+  total_shipments: { tile: "bg-sky-500/10 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300", line: "#0ea5e9" },
+  average_cost: { tile: "bg-violet-500/10 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300", line: "#8b5cf6" },
+  total_cod: { tile: "bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300", line: "#f59e0b" },
+  pending_recon: { tile: "bg-rose-500/10 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300", line: "#f43f5e" },
+};
+const kpiTone = (key: string): Tone => KPI_TONE[key] ?? BRAND;
+
 /** True when the KPI has no trustworthy number to show (never rendered as ₹0/0). */
 function isMissing(kpi: Kpi): boolean {
   // Intl.NumberFormat.format(undefined) yields "NaN", so guard before formatting.
@@ -90,7 +105,7 @@ function stagger(index?: number): CSSProperties | undefined {
 const SHELL = "group relative flex min-h-[172px] min-w-0 flex-col rounded-xl border bg-card p-4 shadow-card animate-fade-up";
 
 /** Tiny trend line from a REAL series (no axes; a visual summary of the data). */
-function Sparkline({ values }: { values: number[] }) {
+function Sparkline({ values, color }: { values: number[]; color: string }) {
   const gid = useId();
   if (values.length < 2) return null;
   const max = Math.max(...values);
@@ -102,12 +117,12 @@ function Sparkline({ values }: { values: number[] }) {
     <svg aria-hidden viewBox="0 0 100 28" preserveAspectRatio="none" className="mt-2 h-8 w-full overflow-visible">
       <defs>
         <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={`${line} L100,28 L0,28 Z`} fill={`url(#${gid})`} />
-      <path d={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+      <path d={line} fill="none" stroke={color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -168,7 +183,7 @@ export function KpiCard({ kpi, icon, source, basis, hint, recalculating, note, t
         actionNeeded ? "border-destructive/50" : "border-border hover:border-primary/30",
       )}
     >
-      <KpiHeader label={kpi.label} icon={Icon} details={details}>
+      <KpiHeader label={kpi.label} icon={Icon} tone={kpiTone(kpi.key)} details={details}>
         <SourceBadge status={source} recalculating={recalculating} />
       </KpiHeader>
 
@@ -218,7 +233,7 @@ export function KpiCard({ kpi, icon, source, basis, hint, recalculating, note, t
 
       {missing ? null : trend && trend.length > 1 ? (
         <div title={trendLabel}>
-          <Sparkline values={trend} />
+          <Sparkline values={trend} color={kpiTone(kpi.key).line} />
         </div>
       ) : trendLoading ? (
         <Skeleton aria-label="Loading trend" className="mt-2 h-8 w-full opacity-60" />
@@ -238,11 +253,23 @@ export function KpiCard({ kpi, icon, source, basis, hint, recalculating, note, t
 }
 
 /** Header shared by every KPI state: icon tile + badge on top, label (+ ⓘ) below. */
-function KpiHeader({ label, icon: Icon, details, children }: { label: string; icon: LucideIcon; details?: string[]; children?: ReactNode }) {
+function KpiHeader({
+  label,
+  icon: Icon,
+  tone = BRAND,
+  details,
+  children,
+}: {
+  label: string;
+  icon: LucideIcon;
+  tone?: Tone;
+  details?: string[];
+  children?: ReactNode;
+}) {
   return (
     <div>
       <div className="flex items-start justify-between gap-2">
-        <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary dark:bg-primary/15">
+        <span aria-hidden className={cn("grid size-10 shrink-0 place-items-center rounded-lg", tone.tile)}>
           <Icon className="size-5" />
         </span>
         <div className="shrink-0">{children}</div>
@@ -295,7 +322,7 @@ export function KpiCardSkeleton({
   return (
     <div aria-busy="true" aria-label={label ? `${label} loading` : "Loading"} style={stagger(index)} className={cn(SHELL, "border-border")}>
       {label ? (
-        <KpiHeader label={label} icon={kpiIcon(kpiKey ?? "")}>
+        <KpiHeader label={label} icon={kpiIcon(kpiKey ?? "")} tone={kpiTone(kpiKey ?? "")}>
           {badge}
         </KpiHeader>
       ) : (
@@ -324,7 +351,7 @@ export function KpiCardUnavailable({
 }) {
   return (
     <article aria-label={label} style={stagger(index)} className={cn(SHELL, "border-border")}>
-      <KpiHeader label={label} icon={kpiIcon(kpiKey)}>
+      <KpiHeader label={label} icon={kpiIcon(kpiKey)} tone={kpiTone(kpiKey)}>
         <SourceBadge status="unavailable" />
       </KpiHeader>
       <div className="mt-2 flex items-center gap-2 text-muted-foreground">
