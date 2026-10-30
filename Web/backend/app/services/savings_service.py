@@ -158,12 +158,16 @@ async def _refresh_savings(key: tuple) -> None:
             return
         async with live_support.background_job_sem:
             try:
-                result = await _fetch_live(*key)
+                with live_support.background_timeout():  # slow tools; no request waits
+                    result = await _fetch_live(*key)
                 _cache[key] = (time.monotonic(), result)
                 live_support.prune_cache(_cache, _SAVINGS_CACHE_MAX)
                 logger.info("savings: warm refresh done for %s", key)
-            except Exception:  # noqa: BLE001 — keep last good, never fabricate
+                live_support.log_fetch("savings-opportunity", key, "live-mcp", _cache[key][0],
+                                       mode=live_support.rebuild_mode())
+            except Exception as exc:  # noqa: BLE001 — keep last good, never fabricate
                 logger.exception("savings: warm refresh failed for %s; keeping last good", key)
+                live_support.note_warm_failure("savings", key, exc)
 
 
 def _spawn_savings_refresh(key: tuple) -> None:
@@ -198,8 +202,11 @@ async def get_savings_opportunity(
     if cached is not None:
         ts, resp = cached
         if (now - ts) < _TTL_SECONDS:
+            live_support.log_fetch("savings-opportunity", key, "warm-cache", ts)
             return resp  # fresh — instant
         _spawn_savings_refresh(key)  # stale → serve last-good now, rebuild in background
+        live_support.log_fetch("savings-opportunity", key, "warm-cache", ts,
+                               detail="stale; rebuild queued")
         return resp
     if not live_support.settings.mcp_connect_url:
         logger.warning("savings: Ship MCP not configured — returning empty sample.")
@@ -207,7 +214,7 @@ async def get_savings_opportunity(
     try:
         # Cold window (never built) → build once, then the scheduler keeps it warm.
         result = await _fetch_live(date_from, date_to)
-        _cache[key] = (now, result)
+        _cache[key] = (mcp_client.cache_stamp(now), result)
         live_support.prune_cache(_cache, _SAVINGS_CACHE_MAX)
         return result
     except Exception as exc:  # noqa: BLE001 — never break the page

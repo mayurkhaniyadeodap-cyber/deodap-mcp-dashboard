@@ -1,7 +1,8 @@
 /**
  * Shared chart theme so every Recharts visualization reads as one system.
  * Colors come from the DeoDap accent tokens; categorical series cycle through
- * CHART_SERIES. Axis/grid values are tuned for the dark surface.
+ * CHART_SERIES. Axis/grid/tick colours are CSS-variable tokens (index.css), so the
+ * same chart reads correctly in both the dark and light theme.
  */
 export const CHART_COLORS = {
   blue: "#3b82f6",
@@ -31,10 +32,13 @@ export const BILLING_SEGMENTS = [
 ] as const;
 
 export const CHART_AXIS = {
-  stroke: "#475569",
-  tick: { fill: "#94a3b8", fontSize: 12 },
-  grid: "#273548",
+  stroke: "hsl(var(--chart-axis))",
+  tick: { fill: "hsl(var(--chart-tick))", fontSize: 12 },
+  grid: "hsl(var(--chart-grid))",
 } as const;
 
-// Tooltip styling now lives in the shared <ChartTooltip> component
-// (components/shared/ChartTooltip.tsx) so item text is always light-on-dark.
+/** Bar hover cursor — a faint wash of the foreground colour, either theme. */
+export const CHART_CURSOR = { fill: "hsl(var(--foreground) / 0.05)" } as const;
+
+// Tooltip styling lives in the shared <ChartTooltip> component
+// (components/shared/ChartTooltip.tsx), themed with the popover tokens.

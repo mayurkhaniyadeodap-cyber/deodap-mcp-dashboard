@@ -1,331 +1,198 @@
-import { useMemo } from "react";
-import { isAxiosError } from "axios";
-import { AlertTriangle } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  LabelList,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { ChartCard } from "@/components/shared/ChartCard";
-import { Freshness } from "@/components/shared/Freshness";
-import { ChartTooltip } from "@/components/shared/ChartTooltip";
+import { CostBreakdownCard } from "@/components/dashboard/CostBreakdownCard";
+import { CourierCostCard } from "@/components/dashboard/CourierCostCard";
+import { DataStatusLegend } from "@/components/dashboard/DataStatusLegend";
+import { RecentShipments } from "@/components/dashboard/RecentShipments";
+import { SavingsInsightCard } from "@/components/dashboard/SavingsInsightCard";
+import { ShipmentDistributionCard } from "@/components/dashboard/ShipmentDistributionCard";
+import { StateCostCard } from "@/components/dashboard/StateCostCard";
+import { TrendCard } from "@/components/dashboard/TrendCard";
 import { CourierBillsTable } from "@/components/shared/CourierBillsTable";
-import { KpiCard } from "@/components/shared/KpiCard";
-import { SourceBadge } from "@/components/shared/SourceBadge";
-import { PanelUnavailable, UnavailableBanner } from "@/components/shared/Unavailable";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { courierStyle } from "@/config/couriers";
+import { KpiCard, KpiCardSkeleton, KpiCardUnavailable } from "@/components/shared/KpiCard";
+import { UnavailableBanner } from "@/components/shared/Unavailable";
 import { useCouriers } from "@/services/couriers.service";
-import { useDashboard, useDashboardCourierBilling, useDashboardRateDiff } from "@/services/dashboard.service";
+import {
+  useDashboard,
+  useDashboardCourierBilling,
+  useDashboardRateDiff,
+  useKpiTrends,
+} from "@/services/dashboard.service";
 import { useSavingsOpportunity } from "@/services/discrepancies.service";
+import { useTrend } from "@/services/trend.service";
 import { useDateRange } from "@/store/dateRange.store";
-import { CHART_AXIS, CHART_COLORS } from "@/config/chart";
-import { formatCurrencyINR, formatCurrencyINRCompact, formatNumber } from "@/utils/format";
+import type { Kpi } from "@/types/api";
 import { basisLabel } from "@/utils/provenance";
 import { badgeFromSource } from "@/utils/source";
 
-// Population per-courier cost — Forward + RTO, BOTH from shipping_cost_summary
-// (group_by=courier), so they share the same population and the same scale.
-const COST_SERIES = [
-  { key: "freight", label: "Forward Cost", color: CHART_COLORS.blue },
-  { key: "rto", label: "RTO Cost", color: CHART_COLORS.red },
+// The four fast KPIs served by /api/dashboard, in display order (labels are used for
+// their loading/unavailable states, before the response — which carries its own
+// labels — has arrived).
+const BASE_KPIS = [
+  { key: "total_billing", label: "Total Billed Amount" },
+  { key: "total_shipments", label: "Total Shipments" },
+  { key: "average_cost", label: "Avg Cost/Shipment" },
+  { key: "total_cod", label: "COD Remittance" },
 ] as const;
 
-// Forward cost BREAKDOWN — sampled from list_orders rate_summary (a different
-// population from the cost chart above, so it lives in its own card). Fuel/other
-// are always ₹0 and folded into the all-inclusive base freight → never their own
-// series (there's no live Fuel source).
-const BREAKDOWN_SEGMENTS = [
-  { key: "base_freight", label: "Base Freight", color: CHART_COLORS.blue },
-  { key: "gst", label: "GST", color: CHART_COLORS.amber },
-  { key: "cod_charges", label: "COD Charges", color: CHART_COLORS.green },
-] as const;
+const KPI_HINTS: Record<string, string> = {
+  total_billing: "Forward + RTO courier cost for orders booked in the selected range.",
+  total_shipments: "Orders booked in the selected range.",
+  average_cost: "Total billed amount ÷ shipments for the range.",
+  total_cod: "COD actually remitted by couriers. Remittance lags delivery by a few days.",
+  pending_recon: "Rate difference (invoiced − applied) on lines not yet reconciled. Recent ranges rise as invoices post.",
+};
 
-const OTHERS_COLOR = "#64748b"; // slate — the merged "Others" donut slice
+/** A KPI built on the client from a dedicated endpoint (no delta: none is served). */
+function soloKpi(key: string, label: string, value: number, unavailable: boolean, subtitle?: string): Kpi {
+  return { key, label, value, format: "currency", delta: 0, delta_tone: "neutral", has_delta: false, unavailable, subtitle };
+}
 
 export default function DashboardPage() {
-  const { data, isLoading, isFetching, isError, error, refetch, dataUpdatedAt } = useDashboard();
+  const dash = useDashboard();
   const couriers = useCouriers();
   const pendingRecon = useDashboardRateDiff();
   const billing = useDashboardCourierBilling();
-  const savings = useSavingsOpportunity(); // Savings Identified KPI (slow, own skeleton)
-
-  if (isError) {
-    // Distinguish a transport failure (no HTTP response) from a server/MCP error so
-    // the message is actionable rather than a generic "couldn't load".
-    const message =
-      isAxiosError(error) && !error.response
-        ? "Network request failed."
-        : "MCP data is currently unavailable.";
-    return (
-      <Card className="mx-auto max-w-md p-8 text-center">
-        <AlertTriangle className="mx-auto size-8 text-destructive" />
-        <p className="mt-3 font-medium">{message}</p>
-        <button onClick={() => refetch()} className="mt-4 text-sm text-primary hover:underline">Try again</button>
-      </Card>
-    );
-  }
-
-  const unavailable = data?.source === "unavailable";
-  const badge = badgeFromSource(data?.source);
-
-  // Provenance basis line for every KPI: "<date_field> · <window>" (always shown so
-  // the active window is unmissable).
+  const savings = useSavingsOpportunity();
+  const trend = useTrend();
+  const kpiTrends = useKpiTrends();
   const { preset, from, to } = useDateRange();
+
+  const data = dash.data;
+  // A failed request and an "unavailable" response are the same honest state for the
+  // panels: no numbers, a Retry. The rest of the dashboard keeps working.
+  const dashDown = dash.isError || data?.source === "unavailable";
+  const dashBadge = dash.isError ? "unavailable" : badgeFromSource(data?.source);
+  const retryDash = () => void dash.refetch();
   const basisLine = (dateField: string) => basisLabel(dateField, preset, from, to);
-
-  // Population cost per courier (Forward + RTO), sorted by total cost. Memoized so
-  // these reduce/sort/map chains recompute only when the underlying data changes,
-  // not on every re-render (e.g. when a sibling query re-settles).
-  const courierCost = useMemo(
-    () =>
-      [...(couriers.data ?? [])]
-        .map((c) => ({ name: c.name, freight: c.freight, rto: c.rto }))
-        .sort((a, b) => b.freight + b.rto - (a.freight + a.rto)),
-    [couriers.data],
-  );
-
-  // Shipment distribution — dedupe by name, then Top 6 couriers + "Others" so the
-  // donut and legend stay compact and never scroll.
-  const { distribution, distTotal } = useMemo(() => {
-    const distTop = 6;
-    const merged = Object.values(
-      (data?.distribution ?? []).reduce<Record<string, { name: string; value: number }>>((acc, d) => {
-        const name = String(d.name);
-        (acc[name] ??= { name, value: 0 }).value += Number(d.value ?? 0);
-        return acc;
-      }, {}),
-    ).sort((a, b) => b.value - a.value);
-    const othersValue = merged.slice(distTop).reduce((s, d) => s + d.value, 0);
-    const dist = othersValue > 0 ? [...merged.slice(0, distTop), { name: "Others", value: othersValue }] : merged;
-    return { distribution: dist, distTotal: dist.reduce((s, d) => s + d.value, 0) };
-  }, [data?.distribution]);
-  const sliceColor = (name: string) => (name === "Others" ? OTHERS_COLOR : courierStyle(name).color);
+  // KPI sparklines: real values per equal period of the selected range.
+  const series = kpiTrends.data?.source === "live" ? kpiTrends.data.series : undefined;
+  const periods = kpiTrends.data?.buckets.length ?? 0;
+  const sparkProps = (key: string) => ({
+    trend: series?.[key],
+    trendLabel: periods ? `Trend across ${periods} equal periods of the selected range` : undefined,
+    trendLoading: kpiTrends.isLoading,
+    trendNote:
+      kpiTrends.isError || kpiTrends.data?.source === "unavailable"
+        ? "Trend unavailable right now"
+        : periods === 0 && kpiTrends.data
+          ? "Pick 2+ days to see a trend"
+          : undefined,
+  });
 
   return (
-    <div className="space-y-8">
-      <UnavailableBanner show={unavailable} onRetry={() => refetch()} retrying={isFetching} />
-      <div className="flex items-center justify-end">
-        <Freshness updatedAt={dataUpdatedAt} />
-      </div>
-      {/* KPI row — 4 fast KPIs + 2 KPIs (Pending Reconciliation, Savings) each
-          fetched from its own endpoint with its own skeleton. */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {isLoading || !data
-          ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="h-[150px] animate-pulse" />)
-          : unavailable
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i} className="h-[150px]"><PanelUnavailable onRetry={() => refetch()} retrying={isFetching} /></Card>
-            ))
-          : data.kpis.map((kpi) => (
-              <KpiCard key={kpi.key} kpi={kpi} source={badge} basis={basisLine(data.date_field)} />
-            ))}
-        {/* Pending Reconciliation — the live ₹ rate difference (invoiced − applied) on
-            unreconciled ("Disputed") lines for the window, from /dashboard/rate-diff
-            (reconciliation_summary group_by=status). Approved design (key
-            "pending_recon"): amount > 0 → ₹ + "Action Needed"; amount 0 → ₹0 + "No
-            Pending Reconciliation"; only N/A when the MCP is not live. */}
-        {pendingRecon.isLoading || !pendingRecon.data ? (
-          <Card className="h-[150px] animate-pulse" />
-        ) : (
-          <KpiCard
-            kpi={{
-              key: "pending_recon",
-              label: "Pending Reconciliation",
-              value: pendingRecon.data.kpi.value,
-              format: "currency",
-              delta: 0,
-              delta_tone: "neutral",
-              has_delta: false,
-              // Recent windows are still reconciling → flag it so the ₹ isn't read as
-              // final (it rises as reconciliation posts). Maturity comes from the date,
-              // not from MCP data.
-              subtitle: pendingRecon.data.maturing
-                ? "Recent window — still reconciling; figure will rise as data matures"
-                : undefined,
-              // N/A only when the value is NOT live (MCP unavailable / mock) — never
-              // display a non-live or hardcoded figure.
-              unavailable: pendingRecon.data.source !== "live",
-            }}
-            source={pendingRecon.data.source === "live" ? "live" : "sample"}
-            basis={basisLine(pendingRecon.data.date_field)}
-          />
-        )}
-        {/* Savings Identified — applied vs cheapest serviceable (pincode_serviceability sample) */}
-        {savings.isLoading || !savings.data ? (
-          <Card className="h-[150px] animate-pulse" />
-        ) : (
-          <KpiCard
-            kpi={{
-              key: "savings",
-              label: "Savings Identified",
-              value: savings.data.total_saving,
-              format: "currency",
-              delta: 0,
-              delta_tone: "neutral",
-              has_delta: false,
-              unavailable: false,
-              subtitle: `applied vs cheapest serviceable · sampled ${savings.data.sampled} AWBs`,
-            }}
-            source={savings.data.source === "live" ? "live" : "sample"}
-            basis={basisLine("order_date")}
-          />
-        )}
-      </div>
+    <div className="space-y-5">
+      <UnavailableBanner show={dashDown} onRetry={retryDash} retrying={dash.isFetching} />
 
-      {/* Courier cost (population) + distribution */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <ChartCard
-          title="Courier-wise Cost"
-          description="Population cost per courier · Forward + RTO · shipping_cost_summary (same scale)"
-          loading={couriers.isLoading}
-          unavailable={unavailable}
-          onRetry={() => refetch()}
-          className="lg:col-span-2"
-          height={400}
-          endpoint="/api/couriers"
-          action={<SourceBadge status={badge} />}
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={courierCost} margin={{ left: 8, right: 8, top: 8 }}>
-              <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
-              <XAxis dataKey="name" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={56} />
-              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
-              <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
-              <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 12 }} />
-              {COST_SERIES.map((s, i) => (
-                <Bar key={s.key} dataKey={s.key} name={s.label} stackId="cost" fill={s.color} radius={i === COST_SERIES.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard title="Shipment Distribution" description="Share of orders by courier" loading={isLoading} unavailable={unavailable} onRetry={() => refetch()} height={400} endpoint="/api/dashboard" action={<SourceBadge status={badge} />}>
-          {/* Legend removed — the donut fills the whole card and stays centered. */}
-          <div className="flex h-full items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={distribution} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={90} outerRadius={145} paddingAngle={2} stroke="none">
-                  {distribution.map((d) => <Cell key={d.name} fill={sliceColor(d.name)} />)}
-                </Pie>
-                <Tooltip content={<DonutTooltip total={distTotal} />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* Courier bills detail */}
-      <CourierBillsTable data={couriers.data ?? []} loading={couriers.isLoading} source={badge} />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Forward Cost Breakdown — SAMPLED rate_summary (separate population from the
-            population cost chart above). Fuel is folded into Base Freight. */}
-        <ChartCard
-          title={`Forward Cost Breakdown${billing.data && !billing.data.is_full ? " · Sampled" : ""}`}
-          description={
-            billing.data
-              ? `${
-                  billing.data.is_full
-                    ? `All ${formatNumber(billing.data.sample_size)}`
-                    : `Sample of ${formatNumber(billing.data.sample_size)} of ${formatNumber(billing.data.total_matched)}`
-                } shipments · sampled forward ₹ (RTO shown separately, not added in) · Fuel is inside Base Freight.`
-              : "Sampled forward cost components per courier"
-          }
-          loading={false}
-          unavailable={billing.data?.source === "unavailable"}
-          onRetry={() => billing.refetch()}
-          height={400}
-          endpoint="/api/dashboard/courier-billing"
-          action={<SourceBadge status={badgeFromSource(billing.data?.source)} />}
-        >
-          {billing.isLoading ? (
-            <div className="flex h-full flex-col justify-end gap-2 px-2 pb-6">
-              <Skeleton className="h-[70%] w-full" />
-              <p className="text-xs text-muted-foreground">Sampling rate_summary components (~7s)…</p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={billing.data?.rows ?? []} margin={{ left: 8, right: 8, top: 8 }}>
-                <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
-                <XAxis dataKey="courier" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={56} />
-                <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
-                <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
-                <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: 12 }} />
-                {BREAKDOWN_SEGMENTS.map((s, i) => (
-                  <Bar key={s.key} dataKey={s.key} name={s.label} stackId="breakdown" fill={s.color} radius={i === BREAKDOWN_SEGMENTS.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        {/* State cost (replaces the zone panel). Title reflects the actual number of
-            states the API returns (backend caps at top-8) — never asserts a count. */}
-        <ChartCard
-          title={`Top ${data?.state_cost?.length ?? 0} States`}
-          description="States ranked by courier cost"
-          loading={isLoading}
-          unavailable={unavailable}
-          onRetry={() => refetch()}
-          height={400}
-          endpoint="/api/dashboard"
-          action={<SourceBadge status={badge} />}
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data?.state_cost ?? []} margin={{ left: 8, right: 8, top: 24 }}>
-              <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
-              <XAxis dataKey="state" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={60} />
-              <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
-              <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
-              <Bar dataKey="total_cost" name="Total Cost" fill={CHART_COLORS.cyan} radius={[4, 4, 0, 0]}>
-                <LabelList
-                  dataKey="total_cost"
-                  position="top"
-                  formatter={(v: number) => formatCurrencyINRCompact(Number(v))}
-                  style={{ fill: CHART_AXIS.tick.fill, fontSize: 11 }}
+      {/* Five KPIs. Each tile loads, fails and retries on its own. */}
+      <section aria-label="Key metrics" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 min-[1500px]:grid-cols-5">
+        {dash.isLoading || (!data && !dash.isError)
+          ? BASE_KPIS.map((k, i) => <KpiCardSkeleton key={k.key} kpiKey={k.key} label={k.label} index={i} />)
+          : dashDown || !data
+            ? BASE_KPIS.map((k, i) => (
+                <KpiCardUnavailable key={k.key} kpiKey={k.key} label={k.label} onRetry={retryDash} retrying={dash.isFetching} index={i} />
+              ))
+            : data.kpis.map((kpi, i) => (
+                <KpiCard
+                  key={kpi.key}
+                  kpi={kpi}
+                  source={dashBadge}
+                  basis={basisLine(data.date_field)}
+                  hint={KPI_HINTS[kpi.key]}
+                  {...sparkProps(kpi.key)}
+                  updatedAt={dash.dataUpdatedAt}
+                  index={i}
                 />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-    </div>
-  );
-}
+              ))}
 
-/** Donut tooltip: courier name, plain order count, and share — never currency. */
-function DonutTooltip({ active, payload, total }: { active?: boolean; payload?: { name?: string; value?: number }[]; total: number }) {
-  if (!active || !payload || payload.length === 0) return null;
-  const item = payload[0];
-  const value = Number(item.value ?? 0);
-  const pct = total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
-  return (
-    <div
-      style={{
-        background: "#1a2236",
-        border: "1px solid #334155",
-        borderRadius: 8,
-        padding: "8px 12px",
-        color: "#f1f5f9",
-        fontSize: 12,
-        lineHeight: 1.5,
-        boxShadow: "0 6px 20px rgba(0, 0, 0, 0.35)",
-      }}
-    >
-      <div style={{ fontWeight: 600 }}>{String(item.name ?? "")}</div>
-      <div>{formatNumber(value)} orders</div>
-      <div style={{ color: "#94a3b8" }}>{pct}%</div>
+        {/* Pending Reconciliation — live ₹ rate difference (invoiced − applied) on
+            unreconciled lines, /dashboard/rate-diff. amount > 0 → "Action Needed";
+            0 → "No Pending Reconciliation"; N/A whenever the value is not live. */}
+        {pendingRecon.isError ? (
+          <KpiCardUnavailable kpiKey="pending_recon" label="Pending Reconciliation" onRetry={() => void pendingRecon.refetch()} retrying={pendingRecon.isFetching} index={4} />
+        ) : pendingRecon.isLoading || !pendingRecon.data ? (
+          <KpiCardSkeleton kpiKey="pending_recon" label="Pending Reconciliation" index={4} />
+        ) : (
+          <KpiCard
+            kpi={soloKpi(
+              "pending_recon",
+              "Pending Reconciliation",
+              pendingRecon.data.kpi.value,
+              pendingRecon.data.source !== "live",
+              // Maturity comes from the date, not from MCP data.
+              pendingRecon.data.maturing ? "Recent window — still reconciling; figure will rise as data matures" : undefined,
+            )}
+            source={badgeFromSource(pendingRecon.data.source)}
+            basis={basisLine(pendingRecon.data.date_field)}
+            hint={KPI_HINTS.pending_recon}
+            {...sparkProps("pending_recon")}
+            updatedAt={pendingRecon.dataUpdatedAt}
+            index={4}
+          />
+        )}
+      </section>
+
+      {/* Main analytics. */}
+      <section aria-label="Cost and distribution" className="grid grid-cols-1 gap-4 lg:grid-cols-2 min-[1500px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <CourierCostCard
+          couriers={couriers.data}
+          loading={couriers.isLoading}
+          unavailable={couriers.isError || dashDown}
+          onRetry={() => void couriers.refetch()}
+          source={couriers.isError ? "unavailable" : dashBadge}
+          updatedAt={couriers.dataUpdatedAt}
+          className="lg:col-span-2 min-[1500px]:col-span-1"
+        />
+        <ShipmentDistributionCard
+          distribution={data?.distribution}
+          loading={dash.isLoading}
+          unavailable={dashDown}
+          onRetry={retryDash}
+          source={dashBadge}
+          updatedAt={dash.dataUpdatedAt}
+        />
+        <StateCostCard
+          rows={data?.state_cost}
+          loading={dash.isLoading}
+          unavailable={dashDown}
+          onRetry={retryDash}
+          source={dashBadge}
+          updatedAt={dash.dataUpdatedAt}
+        />
+      </section>
+
+      {/* Trend + recent shipments. */}
+      <section aria-label="Trend and shipments" className="grid grid-cols-1 gap-4 min-[1500px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <TrendCard
+          data={trend.data}
+          loading={trend.isLoading}
+          failed={trend.isError}
+          onRetry={() => void trend.refetch()}
+          updatedAt={trend.dataUpdatedAt}
+        />
+        <RecentShipments />
+      </section>
+
+      <DataStatusLegend updatedAt={dash.dataUpdatedAt || undefined} />
+
+      {/* Cost detail: sampled forward-cost breakdown + sampled savings. */}
+      <section aria-label="Cost detail" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <CostBreakdownCard
+          data={billing.data}
+          loading={billing.isLoading}
+          failed={billing.isError}
+          onRetry={() => void billing.refetch()}
+          className="xl:col-span-2"
+        />
+        <SavingsInsightCard
+          data={savings.data}
+          loading={savings.isLoading}
+          failed={savings.isError}
+          onRetry={() => void savings.refetch()}
+          basis={basisLine("order_date")}
+        />
+      </section>
+
+      {/* Per-courier billing detail. */}
+      <CourierBillsTable data={couriers.data ?? []} loading={couriers.isLoading} source={couriers.isError ? "unavailable" : dashBadge} />
     </div>
   );
 }

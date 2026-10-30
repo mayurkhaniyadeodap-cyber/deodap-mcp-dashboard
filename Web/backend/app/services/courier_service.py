@@ -177,11 +177,18 @@ async def list_couriers(
     mock on failure/blank token. Absent from/to keeps the last-30-days default."""
     key = (date_from, date_to)
     now = time.monotonic()
+    # Full refresh (mcp_client.fresh_results): skip pre-refresh cache entries and
+    # raise on failure so the last good list is kept (same rule as live_or_mock).
+    since = mcp_client.fresh_since()
     cached = _cache.get(key)
-    if cached is not None and (now - cached[0]) < _CACHE_TTL_SECONDS:
+    if cached is not None and (now - cached[0]) < _CACHE_TTL_SECONDS and (since is None or cached[0] >= since):
+        live_support.log_fetch("couriers", key, "cache", cached[0])
         return cached[1]
 
     if not settings.mcp_connect_url:
+        live_support.log_fetch("couriers", key, "unavailable", detail="(MCP not configured)")
+        if since is not None:
+            raise mcp_client.MCPUnavailableError("MCP_URL/MCP_TOKEN not configured")
         logger.error("Couriers: MCP not configured — returning empty (no fixtures).")
         return _load_mock_couriers() if settings.use_mock_fallback else []
 
@@ -191,10 +198,16 @@ async def list_couriers(
         # e.g. "Today" before the day's data lands). Return it as-is so the charts
         # stay consistent with the KPI cards (both show "no data"). Only a genuine
         # MCP failure (exception below) degrades — to an EMPTY list, never fixtures.
-        _cache[key] = (now, couriers)
+        _cache[key] = (mcp_client.cache_stamp(now), couriers)
         logger.info("Loaded %d couriers from live MCP (from=%s to=%s)", len(couriers), date_from, date_to)
+        live_support.log_fetch("couriers", key, "live-mcp", now,
+                               detail=f"took={time.monotonic() - now:.1f}s rows={len(couriers)}")
         return couriers
     except Exception as exc:  # noqa: BLE001 — never break the app
+        live_support.log_fetch("couriers", key, "failed" if since is not None else "unavailable",
+                               detail=f"cause={live_support.describe_error(exc)!r}")
+        if since is not None:
+            raise
         # Never fixtures — an empty list (no fake ₹). Fixtures only in dev (flag).
         logger.error("Couriers: live MCP fetch failed — returning empty (no fixtures). Cause: %r", exc)
         if settings.use_mock_fallback:

@@ -82,6 +82,7 @@ export type SlaResponse = Schemas["SlaResponse"];
 export type DiscrepancyResponse = Schemas["DiscrepancyResponse"];
 export type ReconciliationResponse = Schemas["ReconciliationResponse"];
 export type ClaimableRateResponse = Schemas["ClaimableRateResponse"];
+export type KpiTrendsResponse = Schemas["KpiTrendsResponse"];
 export type DisputeLine = Schemas["DisputeLine"];
 export type DisputeLinesResponse = Schemas["DisputeLinesResponse"];
 export type DisputeInvoiceGroup = Schemas["DisputeInvoiceGroup"];
@@ -110,3 +111,9 @@ export type Capability = Schemas["Capability"];
 export type SchedulersResponse = Schemas["SchedulersResponse"];
 export type SchedulerStatus = Schemas["SchedulerStatus"];
 
+
+// --- Full live-data refresh (automatic, every 30 min) ---
+export type RefreshStatus = Schemas["RefreshStatus"];
+export type RefreshDatasetStatus = Schemas["RefreshDatasetStatus"];
+export type RefreshRequest = Schemas["RefreshRequest"];
+export type RefreshStartResponse = Schemas["RefreshStartResponse"];

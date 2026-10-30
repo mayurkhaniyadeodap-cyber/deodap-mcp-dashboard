@@ -21,6 +21,8 @@ from app.schemas.dashboard import (
     DashboardResponse,
     DistributionSlice,
     Kpi,
+    KpiTrendBucket,
+    KpiTrendsResponse,
     PendingReconciliationResponse,
     RateDiffKpi,
     StateCostRow,
@@ -341,12 +343,16 @@ async def _refresh_dashboard(key: tuple) -> None:
             return
         async with live_support.background_job_sem:
             try:
-                resp = await _fetch_live(*key)
+                with live_support.background_timeout():  # slow tools; no request waits
+                    resp = await _fetch_live(*key)
                 _dashboard_warm[key] = (time.monotonic(), resp)
                 live_support.prune_cache(_dashboard_warm, _DASHBOARD_WARM_MAX)
                 logger.info("dashboard: warm refresh done for %s", key)
-            except Exception:  # noqa: BLE001 — keep last good, never fabricate
+                live_support.log_fetch("dashboard", key, "live-mcp", _dashboard_warm[key][0],
+                                       mode=live_support.rebuild_mode())
+            except Exception as exc:  # noqa: BLE001 — keep last good, never fabricate
                 logger.exception("dashboard: warm refresh failed for %s; keeping last good", key)
+                live_support.note_warm_failure("dashboard", key, exc)
 
 
 def _spawn_dashboard_refresh(key: tuple) -> None:
@@ -378,8 +384,10 @@ async def get_dashboard(date_from: str | None = None, date_to: str | None = None
     if hit is not None:
         ts, resp = hit
         if (time.monotonic() - ts) < _DASHBOARD_WARM_TTL:
+            live_support.log_fetch("dashboard", key, "warm-cache", ts)
             return resp  # instant — served from the warm cache
         _spawn_dashboard_refresh(key)  # stale → refresh in background, serve last-good now
+        live_support.log_fetch("dashboard", key, "warm-cache", ts, detail="stale; rebuild queued")
         return resp
     # Cold window (never warmed) → normal path (its own 60s cache); cache the live result warm.
     resp = await live_support.live_or_mock(
@@ -453,3 +461,107 @@ async def get_courier_billing(
         cache=_billing_cache, key=(date_from, date_to), label="dashboard-courier-billing",
         fetch=lambda: _billing_live(date_from, date_to), mock=_billing_mock,
     )
+
+
+# --- KPI sparklines ------------------------------------------------------------
+# No Ship tool groups cost / COD / reconciliation by day, so the sparkline is built
+# from REAL values per period: the selected range is split into up to 7 equal slices
+# and each KPI is computed per slice with the same tools as its headline value
+# (shipping_cost_summary + order_analytics → billed / shipments / avg cost;
+# cod_remittance_aging → COD remitted; reconciliation_summary → pending rate diff).
+# Up to 28 calls, so: its own endpoint (never blocks the KPIs), a small concurrency
+# share (the page panels keep the rest of the global MCP cap), and a 15-minute cache.
+_TREND_MAX_BUCKETS = 7
+_TREND_CONCURRENCY = 3
+_TRENDS_TTL_SECONDS = 15 * 60.0
+_trends_cache: dict = {}
+
+
+def trend_buckets(date_from: str | None, date_to: str | None,
+                  max_buckets: int = _TREND_MAX_BUCKETS) -> list[tuple[str, str]]:
+    """Split [from, to] (inclusive) into ≤ max_buckets contiguous, near-equal periods.
+    A single day (or no range) → [] (one point is not a trend)."""
+    if not date_from or not date_to:
+        return []
+    start, end = date.fromisoformat(date_from), date.fromisoformat(date_to)
+    days = (end - start).days + 1
+    if days < 2:
+        return []
+    n = min(max_buckets, days)
+    return [
+        ((start + timedelta(days=days * i // n)).isoformat(),
+         (start + timedelta(days=days * (i + 1) // n - 1)).isoformat())
+        for i in range(n)
+    ]
+
+
+async def _bucket_values(date_from: str, date_to: str, sem: asyncio.Semaphore) -> dict[str, float]:
+    """KPI values for one period; a metric whose tool failed is simply absent."""
+    args = live_support.date_args(date_from, date_to)
+
+    async def call(tool: str, extra: dict) -> dict:
+        async with sem:
+            return live_support.parse_tool_json(await mcp_client.call_tool(tool, {**args, **extra}))
+
+    oa, cost, aging, recon = await asyncio.gather(
+        call("order_analytics", {"group_by": "courier"}),
+        call("shipping_cost_summary", {"group_by": "state"}),
+        call("cod_remittance_aging", {}),
+        call("reconciliation_summary", {"group_by": "status"}),
+        return_exceptions=True,
+    )
+    values: dict[str, float] = {}
+    if not isinstance(oa, BaseException) and not isinstance(cost, BaseException):
+        t = _totals(oa, cost, {}, {})
+        values.update(total_billing=t["total_cost"], total_shipments=t["orders"],
+                      average_cost=t["avg_cost"])
+    if not isinstance(aging, BaseException):
+        values["total_cod"] = float((aging.get("totals") or {}).get("remitted", 0) or 0)
+    if not isinstance(recon, BaseException):
+        groups = recon.get("breakdown", []) or []
+        disputed = next((b for b in groups if b.get("group") == "Disputed"), None)
+        src = disputed or recon.get("totals") or {}
+        values["pending_recon"] = float(src.get("rate_diff", 0) or 0)
+    return values
+
+
+async def _kpi_trends_live(date_from: str | None, date_to: str | None) -> KpiTrendsResponse:
+    buckets = trend_buckets(date_from, date_to)
+    if not buckets:
+        return KpiTrendsResponse(source="live")
+    sem = asyncio.Semaphore(_TREND_CONCURRENCY)
+    with mcp_client.low_priority():  # never crowds out the page's own MCP calls
+        per_bucket = await asyncio.gather(*[_bucket_values(f, t, sem) for f, t in buckets])
+    keys = ("total_billing", "total_shipments", "average_cost", "total_cod", "pending_recon")
+    series = {k: [round(v[k], 2) for v in per_bucket]
+              for k in keys if all(k in v for v in per_bucket)}
+    if not series:
+        raise RuntimeError("every KPI trend period failed")
+    return KpiTrendsResponse(
+        buckets=[KpiTrendBucket(date_from=f, date_to=t) for f, t in buckets],
+        series=series, source="live",
+    )
+
+
+def _kpi_trends_unavailable() -> KpiTrendsResponse:
+    # Never fabricated: no series at all when the MCP can't serve them.
+    return KpiTrendsResponse(source="unavailable")
+
+
+async def get_kpi_trends(
+    date_from: str | None = None, date_to: str | None = None
+) -> KpiTrendsResponse:
+    """KPI sparkline series — 15-minute cache (outside a forced refresh)."""
+    key = (date_from, date_to)
+    hit = _trends_cache.get(key)
+    fresh = hit is not None and time.monotonic() - hit[0] < _TRENDS_TTL_SECONDS
+    if fresh and mcp_client.fresh_since() is None:
+        live_support.log_fetch("dashboard-kpi-trends", key, "cache", hit[0])
+        return hit[1]
+    resp = await live_support.live_or_mock(
+        cache={}, key=key, label="dashboard-kpi-trends",
+        fetch=lambda: _kpi_trends_live(date_from, date_to), mock=_kpi_trends_unavailable,
+    )
+    if resp.source == "live":
+        _trends_cache[key] = (time.monotonic(), resp)
+    return resp

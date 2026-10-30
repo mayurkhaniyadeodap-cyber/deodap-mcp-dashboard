@@ -12,8 +12,8 @@ import contextvars
 import logging
 import time
 import weakref
-from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from datetime import timedelta
 from typing import Any
 
@@ -156,7 +156,8 @@ async def _execute(operation: Callable[[ClientSession], Awaitable[Any]]) -> Any:
     if not url:
         raise MCPUnavailableError("MCP_URL/MCP_TOKEN not configured")
 
-    timeout = timedelta(seconds=settings.mcp_timeout_seconds)
+    timeout_seconds = _effective_timeout()
+    timeout = timedelta(seconds=timeout_seconds)
     strategies = _strategies(url, timeout)
     # Once a transport is known good, try ONLY it — so a failed call fails FAST (one
     # timeout ≈ mcp_timeout_seconds) into the "unavailable" state instead of hanging
@@ -174,7 +175,7 @@ async def _execute(operation: Callable[[ClientSession], Awaitable[Any]]) -> Any:
             async with factory() as streams:
                 read, write = streams[0], streams[1]
                 async with ClientSession(read, write) as session:
-                    async with asyncio.timeout(settings.mcp_timeout_seconds):
+                    async with asyncio.timeout(timeout_seconds):
                         await session.initialize()
                         # Connection + handshake proven good on THIS transport. Cache it
                         # NOW — before running the operation — so that (a) every later
@@ -224,6 +225,112 @@ _TOOL_CACHE_TTL = 60.0
 _TOOL_CACHE_MAX = 256
 _tool_cache: dict[tuple, tuple[float, Any]] = {}
 _tool_inflight: dict[tuple, "asyncio.Future[Any]"] = {}
+_tool_inflight_started: dict[tuple, float] = {}  # key -> monotonic start of the in-flight call
+
+# --- Forced fresh reads (full refresh: "Fetch Data Now" / automatic refresh) -----
+# Inside `fresh_results(since)`, a cached tool result (or an in-flight call) that
+# STARTED before `since` is not reused — the call goes to the MCP again. Results
+# fetched after `since` ARE reused, so one refresh that needs the same tool+args for
+# several datasets still makes ONE round-trip (cache + single-flight preserved), and
+# every real call still takes a slot from the global concurrency limit. The fresh
+# result is stored in the normal cache, so it also serves ordinary requests.
+# A contextvar (not a parameter) so every service reaches it unchanged: asyncio
+# copies the context into the tasks that gather() creates.
+_fresh_since: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "mcp_fresh_since", default=None
+)
+
+
+def _next_tick() -> float:
+    """A monotonic instant strictly AFTER every timestamp already stored. The
+    monotonic clock is coarse on Windows (~16ms ticks), so a value cached in the
+    current tick would otherwise compare equal to the cut-off and count as fresh.
+    Waits at most one tick (instant on Linux, where the clock is fine-grained)."""
+    first = now = time.monotonic()
+    while now == first:
+        now = time.monotonic()
+    return now
+
+
+# Start of the most recent forced refresh (any task). Lets cache_stamp() tell whether
+# a refresh began while a fetch was in flight.
+_latest_fresh_start: float = float("-inf")
+
+
+def cache_stamp(started: float) -> float:
+    """Timestamp to store with a result whose fetch began at `started`.
+
+    The FINISH time, so a cache TTL counts from when the data arrived — stamping the
+    start made any fetch slower than the TTL (common when the MCP is busy) land in the
+    cache already expired, so the next page visit fetched it all over again. Exception:
+    if a forced refresh began mid-fetch, keep the start time, so that refresh still
+    sees the result as older than its cut-off and fetches fresh data."""
+    if _latest_fresh_start > started:
+        return started
+    return time.monotonic()
+
+
+@contextmanager
+def fresh_results(since: float | None = None) -> Iterator[float]:
+    """Force fresh MCP reads for results older than `since` (monotonic; default now)."""
+    global _latest_fresh_start
+    started = _next_tick() if since is None else since
+    _latest_fresh_start = max(_latest_fresh_start, started)
+    token = _fresh_since.set(started)
+    try:
+        yield started
+    finally:
+        _fresh_since.reset(token)
+
+
+def fresh_since() -> float | None:
+    """The active forced-refresh cut-off, or None outside a refresh."""
+    return _fresh_since.get()
+
+
+# --- Per-call timeout override (background work) ---------------------------------
+# Background jobs nobody waits on (full refresh, warm-cache rebuilds) may give slow
+# tools longer than the request-path MCP_TIMEOUT_SECONDS. Contextvar for the same
+# reason as above: every service reaches it unchanged.
+_call_timeout: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "mcp_call_timeout", default=None
+)
+
+
+@contextmanager
+def call_timeout(seconds: float) -> Iterator[None]:
+    """Use `seconds` as the per-call MCP timeout for calls made inside this block."""
+    token = _call_timeout.set(seconds)
+    try:
+        yield
+    finally:
+        _call_timeout.reset(token)
+
+
+def _effective_timeout() -> float:
+    return _call_timeout.get() or settings.mcp_timeout_seconds
+
+
+# --- Background lane ----------------------------------------------------------------
+# Work no user is waiting on (full refresh, warm-cache rebuilds — both run under
+# call_timeout/fresh_results — and anything inside low_priority(), e.g. the KPI
+# sparklines) shares at most MCP_BACKGROUND_MAX_CONCURRENCY of the global slots, so
+# a page opened mid-refresh is never queued behind ~100 background round-trips.
+_low_priority: contextvars.ContextVar[bool] = contextvars.ContextVar("mcp_low_priority", default=False)
+
+
+@contextmanager
+def low_priority() -> Iterator[None]:
+    """Run the MCP calls made inside this block in the background lane."""
+    token = _low_priority.set(True)
+    try:
+        yield
+    finally:
+        _low_priority.reset(token)
+
+
+def _is_background() -> bool:
+    return _low_priority.get() or _call_timeout.get() is not None or _fresh_since.get() is not None
 
 # --- Global bounded concurrency for REAL MCP round-trips -----------------------
 # 3. CONCURRENCY CAP: only ACTUAL round-trips take a slot (cache + single-flight
@@ -248,6 +355,21 @@ def _mcp_semaphore() -> asyncio.Semaphore:
     return sem
 
 
+_bg_semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _bg_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _bg_semaphores.get(loop)
+    if sem is None:
+        cap = max(1, settings.mcp_max_concurrency)
+        sem = asyncio.Semaphore(min(cap, max(1, settings.mcp_background_max_concurrency)))
+        _bg_semaphores[loop] = sem
+    return sem
+
+
 def _tool_key(name: str, arguments: dict) -> tuple:
     # args are flat scalars (str/int/bool) → hashable and order-independent.
     return (name, tuple(sorted(arguments.items())))
@@ -263,24 +385,47 @@ async def call_tool(name: str, arguments: dict | None = None) -> Any:
     single-flight in-flight map + a short TTL result cache (see above)."""
     arguments = arguments or {}
     key = _tool_key(name, arguments)
-    now = time.monotonic()
+    since = _fresh_since.get()
     stats = _request_stats.get()
     if stats is not None:
         stats.calls += 1
 
-    hit = _tool_cache.get(key)
-    if hit is not None and (now - hit[0]) < _TOOL_CACHE_TTL:
-        if stats is not None:
-            stats.cache_hits += 1
-        perf_logger.debug("mcp %-28s cache HIT", name)
-        return hit[1]
+    retried_joined = False
+    while True:
+        now = time.monotonic()
+        hit = _tool_cache.get(key)
+        if hit is not None and (now - hit[0]) < _TOOL_CACHE_TTL and (since is None or hit[0] >= since):
+            if stats is not None:
+                stats.cache_hits += 1
+            perf_logger.debug("mcp %-28s cache HIT", name)
+            return hit[1]
 
-    inflight = _tool_inflight.get(key)
-    if inflight is not None:
-        if stats is not None:  # deduped by single-flight → no MCP round-trip
-            stats.cache_hits += 1
-        perf_logger.debug("mcp %-28s single-flight HIT", name)
-        return await inflight  # an identical call is already running — await it
+        inflight = _tool_inflight.get(key)
+        if inflight is None:
+            break
+        if since is None or _tool_inflight_started.get(key, now) >= since:
+            if stats is not None:  # deduped by single-flight → no MCP round-trip
+                stats.cache_hits += 1
+            perf_logger.debug("mcp %-28s single-flight HIT", name)
+            if since is None:
+                return await inflight  # an identical call is already running — await it
+            try:
+                return await inflight
+            except Exception:  # noqa: BLE001
+                # Forced refresh joined a call that failed — e.g. a page request made
+                # during the refresh, which has the shorter request timeout. Retry
+                # ONCE with our own call (that call has ended, so no duplicate runs).
+                if retried_joined:
+                    raise
+                retried_joined = True
+                continue
+        # Forced refresh: the running identical call started BEFORE the refresh, so
+        # its data may predate it. Let it finish (never two identical round-trips at
+        # once), then look again — its result is too old, so we make our own call.
+        try:
+            await inflight
+        except Exception:  # noqa: BLE001 — its failure is its caller's; we retry fresh
+            pass
 
     loop = asyncio.get_running_loop()
     fut: "asyncio.Future[Any]" = loop.create_future()
@@ -288,20 +433,25 @@ async def call_tool(name: str, arguments: dict | None = None) -> Any:
     # arrive while we're queued single-flight onto this future (a cache hit, no slot)
     # instead of stacking up their own real round-trips behind the semaphore.
     _tool_inflight[key] = fut
+    _tool_inflight_started[key] = now
     try:
         # Take a global slot only for the REAL round-trip. Time only the round-trip
         # (started after acquiring) so mcp_seconds stays "pure MCP time" — directly
         # comparable before/after this change; queue wait shows up in endpoint time.
-        async with _mcp_semaphore():
-            call_started = time.monotonic()
-            result = await _execute(lambda s: s.call_tool(name, arguments))
-            elapsed = time.monotonic() - call_started
+        # Background work first takes a background-lane slot, so it can never hold
+        # every global slot (pages always have some free).
+        async with (_bg_semaphore() if _is_background() else nullcontext()):
+            async with _mcp_semaphore():
+                call_started = time.monotonic()
+                result = await _execute(lambda s: s.call_tool(name, arguments))
+                elapsed = time.monotonic() - call_started
     except Exception as exc:  # noqa: BLE001 — never cache failures
         if not fut.done():
             fut.set_exception(exc)
         raise
     finally:
         _tool_inflight.pop(key, None)
+        _tool_inflight_started.pop(key, None)
 
     if stats is not None:
         stats.real_calls += 1
@@ -316,7 +466,7 @@ async def call_tool(name: str, arguments: dict | None = None) -> Any:
         # is a HARD bound, not just best-effort.
         if len(_tool_cache) >= _TOOL_CACHE_MAX:
             _tool_cache.pop(min(_tool_cache, key=lambda k: _tool_cache[k][0]), None)
-    _tool_cache[key] = (now, result)
+    _tool_cache[key] = (cache_stamp(now), result)
     if not fut.done():
         fut.set_result(result)
     return result

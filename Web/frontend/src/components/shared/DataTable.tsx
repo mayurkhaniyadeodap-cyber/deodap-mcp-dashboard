@@ -82,12 +82,12 @@ export function DataTable<T>({
   const colSpan = columns.length + (selection ? 1 : 0);
 
   return (
-    <div className={cn("overflow-x-auto rounded-xl border border-border", className)}>
+    <div className={cn("overflow-x-auto rounded-lg border border-border", className)}>
       <table className="w-full border-collapse text-sm">
         <thead
           className={cn(
-            "bg-card text-xs uppercase tracking-wider text-muted-foreground",
-            stickyHeader && "sticky top-0 z-10",
+            "bg-muted/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
+            stickyHeader && "sticky top-0 z-10 bg-card",
           )}
         >
           <tr className="border-b border-border">

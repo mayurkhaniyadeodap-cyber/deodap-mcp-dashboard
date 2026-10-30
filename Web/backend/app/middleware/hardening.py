@@ -55,6 +55,8 @@ _RULES: list[tuple[str | None, str, str, int, int]] = [
     (None, "/api/_status/schedulers", "admin", 60, 60),
     (None, "/api/_status/metrics", "admin", 60, 60),
     (None, "/api/export", "export", 30, 60),
+    # Starting a full refresh fans out to every MCP tool (status GETs are not limited).
+    ("POST", "/api/refresh", "refresh", 6, 60),
     (None, "/api/_mcp", "debug", 30, 60),
 ]
 

@@ -16,7 +16,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routers import analytics, auth, bills, dashboard, export, mcp_debug, meta, profile, status, users
+from app.api.routers import (
+    analytics,
+    auth,
+    bills,
+    dashboard,
+    export,
+    mcp_debug,
+    meta,
+    profile,
+    refresh,
+    status,
+    users,
+)
 from app.auth import central_sso
 from app.core.config import DEV_JWT_SECRET, settings, validate_required_env
 from app.middleware.error_handler import register_error_handlers
@@ -26,13 +38,17 @@ from app.middleware.request_id import RequestIDMiddleware
 from app.services import (
     dashboard_service,
     discrepancy_service,
+    live_support,
     mcp_client,
     recovery_service,
+    refresh_service,
     savings_service,
     user_store,
 )
 
 logger = logging.getLogger("startup")
+# Per-dataset data-fetch trace (range · live MCP vs cache · fetched_at) — see live_support.
+live_support.configure_fetch_logging()
 
 # --- Runtime readiness state (additive; drives /health/ready, changes nothing else) ---
 _APP_START = time.monotonic()
@@ -82,15 +98,18 @@ async def _start_background_jobs() -> None:
     #   • claimable-rate  (~260s) — every 30 min
     #   • dispute-lines   (enumeration per window+min_diff) — every 30 min
     #   • trend-recovery  (~27s)  — every 10 min
+    #   • full refresh    (every dataset, default window) — every AUTO_REFRESH_INTERVAL_HOURS (0.5 = 30 min)
     dashboard_service.start_dashboard_scheduler()
     savings_service.start_savings_scheduler()
     discrepancy_service.start_claimable_scheduler()
     discrepancy_service.start_lines_scheduler()
     recovery_service.start_recovery_scheduler()
+    refresh_service.start_refresh_scheduler()
     _READY["schedulers_started"] = True
     logger.info(
-        "startup: 5 background schedulers started (dashboard/savings/claimable/dispute-lines/recovery); "
-        "mcp_configured=%s.",
+        "startup: background schedulers started (dashboard/savings/claimable/dispute-lines/recovery"
+        "%s); mcp_configured=%s.",
+        "/full-refresh" if settings.auto_refresh_enabled else "",
         bool(settings.mcp_connect_url),
     )
 
@@ -184,6 +203,8 @@ app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(meta.router, prefix=settings.api_prefix)
 # MCP status view (live-vs-mock snapshot across every dashboard endpoint).
 app.include_router(status.router, prefix=settings.api_prefix)
+# Full live-data refresh ("Fetch Data Now" + status of the automatic refresh).
+app.include_router(refresh.router, prefix=settings.api_prefix)
 # MCP inspection endpoints (tool-call proxy + schema dump) — mounted ONLY when
 # ENABLE_MCP_DEBUG=true so they never ship to production.
 if settings.enable_mcp_debug:

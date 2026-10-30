@@ -17,7 +17,7 @@ export function AdminToolInfo({ endpoint }: { endpoint: string }) {
       <Database className="size-3.5 cursor-help text-muted-foreground/70" tabIndex={0} aria-label={`Data source ${endpoint}`} />
       <span
         role="tooltip"
-        className="pointer-events-none absolute right-0 top-full z-30 mt-1.5 w-64 rounded-lg border border-[#334155] bg-[#1a2236] p-2.5 text-xs leading-snug text-[#f1f5f9] opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className="pointer-events-none absolute right-0 top-full z-30 mt-1.5 w-64 rounded-lg border border-border bg-popover p-2.5 text-xs leading-snug text-popover-foreground opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
       >
         <span className="block font-semibold">Data Source</span>
         <span className="block font-mono text-[11px] text-[#cbd5e1]">{endpoint}</span>

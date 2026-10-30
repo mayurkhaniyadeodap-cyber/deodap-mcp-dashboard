@@ -25,6 +25,29 @@ export function formatCurrencyINRCompact(value: number): string {
   return formatCurrencyINR(value);
 }
 
+/**
+ * Short Indian-unit currency for headline figures: ₹12.4L, ₹1.2Cr (below ₹1 lakh
+ * the full amount is shown). Display only — callers keep the exact value and show it
+ * alongside (KPI cards print the full amount under the headline).
+ */
+export function formatCurrencyINRShort(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const short = (n: number) => n.toFixed(n >= 100 ? 0 : 1).replace(/\.0$/, "");
+  if (abs >= 1e7) return `${sign}₹${short(abs / 1e7)}Cr`;
+  if (abs >= 1e5) return `${sign}₹${short(abs / 1e5)}L`;
+  return formatCurrencyINR(value);
+}
+
+/** Short Indian-unit count for compact labels: 1.30L, 2.4Cr (below 1 lakh: full). */
+export function formatNumberShort(value: number): string {
+  const abs = Math.abs(value);
+  const short = (n: number) => n.toFixed(n < 10 ? 2 : 1).replace(/\.?0+$/, "");
+  if (abs >= 1e7) return `${short(value / 1e7)}Cr`;
+  if (abs >= 1e5) return `${short(value / 1e5)}L`;
+  return formatNumber(value);
+}
+
 /** 12,34,567 — plain number with Indian grouping. */
 export function formatNumber(value: number): string {
   return numberFormatter.format(value);
@@ -78,7 +101,29 @@ export function formatDateIST(input: string | number | Date): string {
   return dateFormatter.format(toDate(input));
 }
 
+const dayMonthFormatter = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+});
+
+/** 07 Jul (IST) — compact chart-axis date. */
+export function formatDayMonthIST(input: string | number | Date): string {
+  return dayMonthFormatter.format(toDate(input));
+}
+
 /** 07 Jul 2026, 03:45 pm (IST). Naive backend datetimes are treated as UTC. */
 export function formatDateTimeIST(input: string | number | Date): string {
   return dateTimeFormatter.format(toDate(input));
+}
+
+/** Relative "Xs / Xm / Xh ago" from an epoch-ms timestamp. */
+export function relTime(ms: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
 }

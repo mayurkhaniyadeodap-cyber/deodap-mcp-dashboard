@@ -154,8 +154,51 @@ Backend (`Web/backend/.env` — see `.env.example`):
 | `CONTENT_SECURITY_POLICY` | no | Override the default CSP string (e.g. to allow Google Fonts). |
 | `RATE_LIMIT_ENABLED` | no | In-memory sliding-window rate limiting (default true; single-worker deploy). |
 | `HSTS_MAX_AGE_SECONDS` | no | HSTS max-age once TLS terminates at the proxy (default 1 year). |
+| `AUTO_REFRESH_ENABLED` | no | Automatic full live-data refresh (default true). |
+| `AUTO_REFRESH_INTERVAL_HOURS` | no | How often the automatic refresh runs (default 0.5 = 30 min). |
+| `AUTO_REFRESH_REUSE_SECONDS` | no | Scheduled runs reuse slow datasets rebuilt this recently, and skip if the window was fully refreshed this recently (default 900). |
+| `AUTO_REFRESH_INITIAL_DELAY_SECONDS` | no | First automatic run after startup (default 300). |
+| `AUTO_REFRESH_UTC_OFFSET_MINUTES` | no | Calendar day for the automatic run's "Last 30 Days" window (default 330 = IST). |
+| `REFRESH_DATASET_TIMEOUT_SECONDS` | no | Upper bound for one dataset inside a refresh (default 1200). |
+| `BACKGROUND_MCP_TIMEOUT_SECONDS` | no | Per-call MCP timeout for background work — full refresh + warm-cache rebuilds (default 180). Page requests keep `MCP_TIMEOUT_SECONDS`. |
 
 Frontend (`Web/frontend/.env`): `VITE_API_BASE_URL=/api` (relative → same-origin).
+
+## Live data refresh (every 30 minutes)
+
+A **full refresh** re-fetches every dashboard dataset (Dashboard, Bills, Courier
+Comparison, Discrepancies, Dispute Lines, COD, Delivery Performance, State
+Analysis, Weight, Trend) from the Ship MCP for one date window
+(`app/services/refresh_service.py`). Selecting a date range in the picker loads
+that range on demand through the normal (cached) endpoints; there is no manual
+fetch button in the UI.
+
+- **Automatic** — every `AUTO_REFRESH_INTERVAL_HOURS` (0.5 = 30 min) for the default
+  *Last 30 Days* window. Dispute Lines always use their own window (last full month,
+  ₹100+). To avoid repeating MCP work, a scheduled run **reuses** a slow dataset
+  (dashboard, claimable, savings, dispute lines, recovery) that its own scheduler
+  rebuilt within `AUTO_REFRESH_REUSE_SECONDS` (15 min) and shows "Reused …" for it;
+  it is **skipped** if the same window was fully refreshed within that time. A run
+  that overruns the interval is followed by a full interval of rest — runs never
+  overlap or start back-to-back.
+- **API-only manual refresh** — `POST /api/refresh` (admin / employee) still starts a
+  full refresh for `{"from","to"}` (it never reuses). A request while a refresh runs
+  starts nothing and returns the running job's progress; the scheduler waits for a
+  running one (and skips its own run if that one covered the same window).
+- **Caching** — the refresh goes through the normal paths: results cached *before*
+  it started are not reused, results fetched *during* it are (single-flight + the
+  60s tool cache), and every real call still takes a slot from `MCP_MAX_CONCURRENCY`.
+  Fresh results replace the cached ones; rendered exports for that window are dropped.
+- **Failures** — a dataset that fails keeps its last good cached value; nothing is
+  replaced by sample or "unavailable" data. The UI refetches only the panels whose
+  datasets succeeded and shows the error.
+- **Status** — there is no refresh indicator in the UI; panels are refetched as each
+  dataset finishes (`useRefreshSync`). Progress, per-dataset result, last attempt,
+  last successful refresh and the next automatic run are available from
+  `GET /api/refresh/status` (any signed-in user; `POST /api/refresh` is
+  admin/employee, rate-limited 6/min). Status is in memory and resets when the
+  backend restarts. Every dataset served or fetched is logged on the `datafetch`
+  logger (range · live-mcp vs cache · fetched_at).
 
 ## Folder structure
 
@@ -211,6 +254,8 @@ roles. Interactive docs at `/docs` (development only).
 | `GET` | `/export` · `/export/{fmt}` · `/disputes/{lines,invoices}/export/{fmt}` | user / **non-viewer** | dataset catalog · CSV\|XLSX |
 | `GET` | `/exports` · `/exports/{id}/download` | user | export history · re-download from disk |
 | `GET` | `/_status` | user | live-vs-unavailable snapshot |
+| `POST` | `/refresh` | **admin / employee** | start a full live-data refresh for `{"from","to"}` |
+| `GET` | `/refresh/status` | user | refresh progress, last attempt / success, next automatic run |
 | `GET` | `/_meta/sources` | public | provenance map for badges |
 
 ## Deployment

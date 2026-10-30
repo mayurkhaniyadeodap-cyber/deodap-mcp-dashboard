@@ -35,6 +35,10 @@ class PerfMiddleware:
         # traffic does NOT send it, so existing responses are byte-for-byte unchanged
         # (no new headers). We only expose stats already collected — no new timer.
         want_perf = any(k == b"x-perf-debug" for k, _ in scope.get("headers", []))
+        # Background prefetch from the frontend ("x-prefetch: 1"): nobody is looking at
+        # this page yet, so its MCP calls go in the background lane (never slowing the
+        # page the user actually has open)…
+        prefetch = any(k == b"x-prefetch" for k, _ in scope.get("headers", []))
 
         async def _send(message):
             if message["type"] == "http.response.start":
@@ -55,7 +59,15 @@ class PerfMiddleware:
             await send(message)
 
         try:
-            await self.app(scope, receive, _send)
+            if prefetch:
+                # …and with the longer background timeout: slow tools (e.g.
+                # weight_reconciliation_summary, 47–72s) can't finish inside the 30s page
+                # timeout, but a prefetch nobody waits on can let them complete.
+                bg_timeout = settings.background_mcp_timeout_seconds
+                with mcp_client.low_priority(), mcp_client.call_timeout(bg_timeout):
+                    await self.app(scope, receive, _send)
+            else:
+                await self.app(scope, receive, _send)
         finally:
             total = time.monotonic() - started
             # Everything that isn't the MCP round-trip: Python transforms + pydantic

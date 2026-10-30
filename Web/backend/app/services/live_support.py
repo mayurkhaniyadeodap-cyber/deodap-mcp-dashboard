@@ -12,11 +12,55 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
 from app.core.config import settings
+from app.services import mcp_client
 
 logger = logging.getLogger("live")
+
+# --- Data-fetch trace log ----------------------------------------------------------
+# One INFO line per dataset served or fetched, so it is visible WHERE each number came
+# from: the requested date range, whether it was a live Ship MCP fetch or a cache hit,
+# and when the data was actually fetched from the MCP. Its own logger + handler (the
+# app has no logging config, so other INFO logs are not printed by uvicorn).
+fetch_logger = logging.getLogger("datafetch")
+
+
+def configure_fetch_logging() -> None:
+    """Print the data-fetch trace at INFO (idempotent; called once at app import)."""
+    if not any(getattr(h, "_datafetch", False) for h in fetch_logger.handlers):
+        handler = logging.StreamHandler()
+        handler._datafetch = True  # type: ignore[attr-defined]
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s datafetch: %(message)s"))
+        fetch_logger.addHandler(handler)
+    fetch_logger.setLevel(logging.INFO)
+
+
+def _wall_clock(monotonic_ts: float) -> str:
+    """Wall-clock UTC time of a cache entry's monotonic timestamp."""
+    ago = max(0.0, time.monotonic() - monotonic_ts)
+    return (datetime.now(UTC) - timedelta(seconds=ago)).isoformat(timespec="seconds")
+
+
+def rebuild_mode() -> str:
+    """Who triggered a warm-cache rebuild: a full refresh, or a background scheduler."""
+    return "refresh" if mcp_client.fresh_since() is not None else "background"
+
+
+def log_fetch(dataset: str, key: tuple, source: str, stored_at: float | None = None,
+              mode: str | None = None, detail: str = "") -> None:
+    """Trace one dataset: `source` is live-mcp (fetched now), cache / warm-cache (an
+    earlier fetch, with its age), or unavailable/failed. `mode`: page (a GET), refresh
+    (Fetch Data Now / automatic refresh) or background (a warm-cache scheduler)."""
+    if mode is None:
+        mode = "refresh" if mcp_client.fresh_since() is not None else "page"
+    when = ""
+    if stored_at is not None:
+        when = f" fetched_at={_wall_clock(stored_at)} age={max(0.0, time.monotonic() - stored_at):.0f}s"
+    fetch_logger.info("dataset=%s range=%s..%s source=%s%s mode=%s%s", dataset, key[0], key[1],
+                      source, when, mode, f" {detail}" if detail else "")
 
 T = TypeVar("T")
 
@@ -27,6 +71,12 @@ CACHE_TTL_SECONDS = 60.0
 # the (session-per-request) upstream MCP — total background concurrency stays bounded
 # by whichever single job is running (each is itself page-concurrency-capped ≤4).
 background_job_sem = asyncio.Semaphore(1)
+
+
+def background_timeout():
+    """Context manager: the longer per-call MCP timeout for background work that no
+    request waits on (warm-cache rebuilds, full refresh) — see config."""
+    return mcp_client.call_timeout(settings.background_mcp_timeout_seconds)
 
 
 class inflight_guard:
@@ -52,6 +102,29 @@ class inflight_guard:
     async def __aexit__(self, *exc) -> None:
         if self.acquired:
             self._registry.discard(self._key)
+
+
+# Last failure of each warm-cache rebuild: {(label, key): (monotonic_ts, message)}.
+# The warm refreshers swallow errors (a scheduler must never crash and the last good
+# value must stay), so this is how a full refresh learns WHY a rebuild failed.
+warm_failures: dict[tuple, tuple[float, str]] = {}
+
+
+def note_warm_failure(label: str, key: tuple, exc: BaseException) -> None:
+    warm_failures[(label, key)] = (time.monotonic(), describe_error(exc))
+    prune_cache(warm_failures, 64)
+
+
+def describe_error(exc: BaseException) -> str:
+    """Short, readable cause for the UI. The MCP SDK wraps failures in nested
+    TaskGroup ExceptionGroups ("unhandled errors in a TaskGroup"), so unwrap to the
+    real error first. Callers must still mask the MCP token (mcp_client._mask)."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    if isinstance(exc, TimeoutError):
+        return f"Ship MCP call timed out (>{settings.mcp_timeout_seconds:.0f}s)"
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
 def prune_cache(cache: dict, max_entries: int) -> None:
@@ -88,13 +161,22 @@ async def live_or_mock(
     fetch: Callable[[], Awaitable[T]],
     mock: Callable[[], T],
 ) -> T:
-    """Return a cached/live result for `key`, falling back to `mock()` on failure."""
+    """Return a cached/live result for `key`, falling back to `mock()` on failure.
+
+    Inside a full refresh (mcp_client.fresh_results) a cached value from before the
+    refresh is not reused, and a failure RAISES instead of serving the fallback — the
+    refresh reports it and the last good cached value is left untouched."""
     now = time.monotonic()
+    since = mcp_client.fresh_since()
     cached = cache.get(key)
-    if cached is not None and (now - cached[0]) < CACHE_TTL_SECONDS:
+    if cached is not None and (now - cached[0]) < CACHE_TTL_SECONDS and (since is None or cached[0] >= since):
+        log_fetch(label, key, "cache", cached[0])
         return cached[1]
 
     if not settings.mcp_connect_url:
+        log_fetch(label, key, "unavailable", detail="(MCP not configured)")
+        if since is not None:
+            raise mcp_client.MCPUnavailableError("MCP_URL/MCP_TOKEN not configured")
         logger.error("%s: Ship MCP not configured — serving 'data unavailable' (no fixtures).", label)
         return mock()
 
@@ -102,10 +184,15 @@ async def live_or_mock(
         result = await fetch()
         if result is None:
             raise ValueError("live fetch returned nothing usable")
-        cache[key] = (now, result)
-        logger.info("%s: served LIVE from MCP (from=%s to=%s)", label, key[0], key[1])
+        cache[key] = (mcp_client.cache_stamp(now), result)
+        log_fetch(label, key, "live-mcp", now, detail=f"took={time.monotonic() - now:.1f}s")
         return result
     except Exception as exc:  # noqa: BLE001 — never break the app
+        log_fetch(label, key, "failed" if since is not None else "unavailable",
+                  detail=f"cause={describe_error(exc)!r}")
+        if since is not None:
+            logger.error("%s: refresh fetch failed — keeping last good value. Cause: %r", label, exc)
+            raise
         # Log the REAL exception at ERROR so an outage can't hide behind a quiet
         # fixture. The fallback (mock callable) returns the honest "unavailable"
         # state by default — fixtures only when USE_MOCK_FALLBACK is on (dev).

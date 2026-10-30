@@ -5,6 +5,7 @@ import type {
   ClaimableRateResponse,
   CourierBillingResponse,
   DashboardResponse,
+  KpiTrendsResponse,
   RateDiffKpi,
 } from "@/types/api";
 import { pollWhileUnavailable } from "@/utils/source";
@@ -75,5 +76,20 @@ export function useDashboardCourierBilling() {
     queryFn: async () => (await api.get<CourierBillingResponse>("/dashboard/courier-billing", { params: { from, to } })).data,
     placeholderData: keepPreviousData,
     refetchInterval: (q) => pollWhileUnavailable(q.state.data?.source),
+  });
+}
+
+/**
+ * GET /api/dashboard/kpi-trends?from&to — real per-period KPI values for the
+ * sparklines (the range split into ≤7 equal periods; same tools as each headline
+ * value). Slow-ish and secondary, so: its own query, a 15-minute cache, and NO
+ * keepPreviousData — another range's line must never sit under this range's value.
+ */
+export function useKpiTrends() {
+  const { from, to } = useDateRange();
+  return useQuery({
+    queryKey: ["dashboard-kpi-trends", from, to],
+    queryFn: async () => (await api.get<KpiTrendsResponse>("/dashboard/kpi-trends", { params: { from, to } })).data,
+    staleTime: 15 * 60 * 1000,
   });
 }

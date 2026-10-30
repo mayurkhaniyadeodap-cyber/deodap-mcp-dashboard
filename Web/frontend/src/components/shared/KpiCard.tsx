@@ -3,66 +3,78 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Banknote,
-  CalendarDays,
   CheckCircle2,
   Clock,
+  HandCoins,
+  Info,
   type LucideIcon,
   Package,
   Percent,
   PiggyBank,
   Receipt,
+  RefreshCw,
   Scale,
   Wallet,
+  WifiOff,
 } from "lucide-react";
+import { type CSSProperties, type ReactNode, useId } from "react";
+import { Freshness } from "@/components/shared/Freshness";
 import { SourceBadge } from "@/components/shared/SourceBadge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { type Accent, ACCENT_HEX, accentAlpha } from "@/config/tokens";
 import type { SourceStatus } from "@/services/meta.service";
 import type { Kpi } from "@/types/api";
-import { formatCurrencyINRCompact, formatNumberCompact, formatPercent } from "@/utils/format";
+import { formatCurrencyINR, formatNumberCompact, formatPercent } from "@/utils/format";
 
-/** KPI key → accent + icon. Falls back to blue/Wallet for unknown keys. */
-const KPI_META: Record<string, { accent: Accent; icon: LucideIcon }> = {
+/** KPI key → icon. Falls back to Wallet for unknown keys. */
+const KPI_ICON: Record<string, LucideIcon> = {
   // Dashboard
-  total_billing: { accent: "blue", icon: Wallet },
-  total_shipments: { accent: "cyan", icon: Package },
-  average_cost: { accent: "purple", icon: Receipt },
-  total_cod: { accent: "amber", icon: Banknote },
-  pending_recon: { accent: "red", icon: Clock },
-  savings: { accent: "green", icon: PiggyBank },
-  rate_diff: { accent: "amber", icon: Wallet },
-  on_time: { accent: "green", icon: CheckCircle2 },
-  overdue: { accent: "red", icon: Clock },
+  total_billing: Wallet,
+  total_shipments: Package,
+  average_cost: Receipt,
+  total_cod: Banknote,
+  pending_recon: Clock,
+  claimable: HandCoins,
+  savings: PiggyBank,
+  rate_diff: Wallet,
+  on_time: CheckCircle2,
+  overdue: Clock,
   // COD
-  collected: { accent: "blue", icon: Banknote },
-  cod_value: { accent: "amber", icon: Banknote },
-  remitted: { accent: "green", icon: PiggyBank },
-  cod_records: { accent: "cyan", icon: Package },
-  pending: { accent: "red", icon: Clock },
-  recon_rate: { accent: "cyan", icon: Percent },
+  collected: Banknote,
+  cod_value: Banknote,
+  remitted: PiggyBank,
+  cod_records: Package,
+  pending: Clock,
+  recon_rate: Percent,
   // COD Intelligence
-  cod_share: { accent: "amber", icon: Percent },
-  avg_cod_value: { accent: "blue", icon: Banknote },
-  remittance_rate: { accent: "green", icon: Percent },
-  overdue_rate: { accent: "red", icon: Percent },
-  overdue_amount: { accent: "red", icon: AlertTriangle },
-  outstanding_cod: { accent: "amber", icon: Wallet },
-  settlement_tat: { accent: "purple", icon: Clock },
+  cod_share: Percent,
+  avg_cod_value: Banknote,
+  remittance_rate: Percent,
+  overdue_rate: Percent,
+  overdue_amount: AlertTriangle,
+  outstanding_cod: Wallet,
+  settlement_tat: Clock,
   // Discrepancies
-  flagged: { accent: "red", icon: AlertTriangle },
-  weight_disc: { accent: "purple", icon: Scale },
-  at_risk: { accent: "amber", icon: Wallet },
-  resolved: { accent: "green", icon: CheckCircle2 },
+  flagged: AlertTriangle,
+  weight_disc: Scale,
+  at_risk: Wallet,
+  resolved: CheckCircle2,
 };
 
+const kpiIcon = (key: string): LucideIcon => KPI_ICON[key] ?? Wallet;
+
+/** True when the KPI has no trustworthy number to show (never rendered as ₹0/0). */
+function isMissing(kpi: Kpi): boolean {
+  // Intl.NumberFormat.format(undefined) yields "NaN", so guard before formatting.
+  return kpi.unavailable || !Number.isFinite(kpi.value);
+}
+
+/** Full Indian-format value (₹68,39,727) — exact, never abbreviated. */
 function formatValue(kpi: Kpi): string {
-  // No data in the selected window, or a missing/non-numeric value → "N/A" (never a
-  // misleading ₹0/0, and never "₹NaN" — Intl.NumberFormat.format(undefined) yields
-  // "NaN", so guard before it reaches the formatter).
-  if (kpi.unavailable || !Number.isFinite(kpi.value)) return "N/A";
+  if (isMissing(kpi)) return "N/A";
   switch (kpi.format) {
     case "currency":
-      return formatCurrencyINRCompact(kpi.value);
+      return formatCurrencyINR(kpi.value);
     case "percent":
       return formatPercent(kpi.value);
     default:
@@ -70,120 +82,267 @@ function formatValue(kpi: Kpi): string {
   }
 }
 
-interface KpiCardProps {
-  kpi: Kpi;
-  /** Override the derived accent/icon if needed. */
-  accent?: Accent;
-  icon?: LucideIcon;
-  /** Live/Sample provenance (from /api/_meta/sources). Optional. */
-  source?: SourceStatus;
-  /** Data basis line, e.g. "Order date · Today (partial)". Always shown so the
-   *  active window is unmissable. */
-  basis?: string;
+/** Staggered entrance (CSS animation; disabled by prefers-reduced-motion). */
+function stagger(index?: number): CSSProperties | undefined {
+  return index === undefined ? undefined : { animationDelay: `${Math.min(index, 8) * 45}ms` };
 }
 
-export function KpiCard({ kpi, accent: accentProp, icon: iconProp, source, basis }: KpiCardProps) {
-  const meta = KPI_META[kpi.key] ?? { accent: "blue" as Accent, icon: Wallet };
-  const accent = accentProp ?? meta.accent;
-  const Icon = iconProp ?? meta.icon;
-  const hex = ACCENT_HEX[accent];
+const SHELL = "group relative flex min-h-[172px] min-w-0 flex-col rounded-xl border bg-card p-4 shadow-card animate-fade-up";
+
+/** Tiny trend line from a REAL series (no axes; a visual summary of the data). */
+function Sparkline({ values }: { values: number[] }) {
+  const gid = useId();
+  if (values.length < 2) return null;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const span = max - min || 1;
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * 100, 26 - ((v - min) / span) * 22] as const);
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+  return (
+    <svg aria-hidden viewBox="0 0 100 28" preserveAspectRatio="none" className="mt-2 h-8 w-full overflow-visible">
+      <defs>
+        <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L100,28 L0,28 Z`} fill={`url(#${gid})`} />
+      <path d={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+interface KpiCardProps {
+  kpi: Kpi;
+  icon?: LucideIcon;
+  /** Live/Sample provenance. Optional. */
+  source?: SourceStatus;
+  /** Data basis, e.g. "Order date · Last 30 days" (in the ⓘ tooltip; shown in the
+   *  footer when there is no updatedAt). */
+  basis?: string;
+  /** Short explanation for a metric that is easy to misread (ⓘ tooltip). */
+  hint?: string;
+  /** A legitimate recalculation is running: badge says so and the value is dimmed. */
+  recalculating?: boolean;
+  /** Amber explanatory line (e.g. why a figure isn't for the selected range yet). */
+  note?: ReactNode;
+  /** Real series for the same range (sparkline). Omitted → no sparkline. */
+  trend?: number[];
+  /** What the sparkline covers (hover text), e.g. "7 equal periods of the range". */
+  trendLabel?: string;
+  /** The series is still loading → a placeholder in the sparkline slot. */
+  trendLoading?: boolean;
+  /** Why there is no sparkline (shown small in its slot). */
+  trendNote?: string;
+  /** When this value was received (epoch ms) → "Updated 2m ago". */
+  updatedAt?: number;
+  /** Position in its grid — drives the entrance stagger. */
+  index?: number;
+}
+
+export function KpiCard({ kpi, icon, source, basis, hint, recalculating, note, trend, trendLabel, trendLoading, trendNote, updatedAt, index }: KpiCardProps) {
+  const Icon = icon ?? kpiIcon(kpi.key);
+  const missing = isMissing(kpi);
+  const value = formatValue(kpi);
 
   // Arrow follows the SIGN (did it go up/down); color follows the MEANING
   // (delta_tone: good = green, bad = red) — a cost increase is red even though ↑.
   const DeltaArrow = kpi.delta >= 0 ? ArrowUpRight : ArrowDownRight;
   const toneClass =
-    kpi.delta_tone === "positive" ? "text-success"
-    : kpi.delta_tone === "negative" ? "text-destructive"
-    : "text-muted-foreground";
-  // Pending Reconciliation status pill (approved design): live amount > 0 → "Action
+    kpi.delta_tone === "positive" ? "text-success" : kpi.delta_tone === "negative" ? "text-destructive" : "text-muted-foreground";
+  // Pending Reconciliation status (approved design): live amount > 0 → "Action
   // Needed"; live amount exactly 0 → "No Pending Reconciliation". Neither shows when
   // the value is unavailable (the tile renders N/A instead).
-  const actionNeeded = kpi.key === "pending_recon" && !kpi.unavailable && kpi.value > 0;
-  const noPending = kpi.key === "pending_recon" && !kpi.unavailable && kpi.value === 0;
+  const actionNeeded = kpi.key === "pending_recon" && !missing && kpi.value > 0;
+  const noPending = kpi.key === "pending_recon" && !missing && kpi.value === 0;
+  // What explains the figure lives in the ⓘ tooltip: hint, subtitle, basis.
+  const details = [hint, kpi.subtitle, basis ? `Basis: ${basis}` : undefined].filter(Boolean) as string[];
 
   return (
-    <div
+    <article
+      aria-label={kpi.label}
+      style={stagger(index)}
       className={cn(
-        // Clean modern tile: top accent bar + subtle icon chip. Red border only when
-        // Pending Reconciliation needs action (a semantic signal, not decoration).
-        "group relative flex flex-col overflow-hidden rounded-2xl border bg-surface-gradient p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
-        actionNeeded ? "border-destructive/60" : "border-border hover:border-border/80",
+        SHELL,
+        "transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-card-hover",
+        actionNeeded ? "border-destructive/50" : "border-border hover:border-primary/30",
       )}
     >
-      {/* Top accent bar */}
+      <KpiHeader label={kpi.label} icon={Icon} details={details}>
+        <SourceBadge status={source} recalculating={recalculating} />
+      </KpiHeader>
+
+      {/* Exact value. Keyed on the value so only a real change fades in. */}
       <div
-        className="absolute inset-x-0 top-0 h-1"
-        style={{ background: `linear-gradient(90deg, ${hex}, ${accentAlpha(accent, 0.35)})` }}
-      />
-
-      {/* 1. Title (+ icon chip, right) */}
-      <div className="flex items-start justify-between gap-3">
-        <span className="text-[12px] font-semibold uppercase leading-tight tracking-wider text-muted-foreground">
-          {kpi.label}
-        </span>
-        <span
-          className="grid size-8 shrink-0 place-items-center rounded-lg"
-          style={{ background: accentAlpha(accent, 0.12), color: hex }}
-        >
-          <Icon className="size-4" />
-        </span>
-      </div>
-
-      {/* 2. LIVE badge */}
-      {source ? (
-        <div className="mt-2.5">
-          <SourceBadge status={source} />
-        </div>
-      ) : null}
-
-      {/* 3. Large value — full Indian format, tabular for alignment */}
-      <div
+        key={String(kpi.value)}
+        title={missing ? "No value for this range" : value}
         className={cn(
-          "mt-3 text-[30px] font-bold leading-none tracking-tight tabular-nums",
-          kpi.unavailable && "text-muted-foreground",
+          "mt-1 animate-fade-in truncate whitespace-nowrap text-[clamp(1.25rem,1.55vw,1.6rem)] font-bold leading-tight tracking-tight tabular-nums",
+          missing && "text-muted-foreground",
+          recalculating && "opacity-60",
         )}
       >
-        {formatValue(kpi)}
+        {value}
       </div>
 
-      {/* 4. Date line — which date_field + window this value covers */}
-      {basis ? (
-        <div className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-          <CalendarDays className="size-3.5 shrink-0" />
-          <span className="truncate">{basis}</span>
-        </div>
+      {/* Trend (↑/↓ % vs previous month) or the Pending Reconciliation status; nothing
+          when there's no real delta (never a fabricated 0%). */}
+      <div className="mt-1.5 flex min-h-[18px] flex-wrap items-center gap-1 text-xs">
+        {missing ? (
+          <span className="text-muted-foreground">No value for this range</span>
+        ) : actionNeeded ? (
+          <span className="inline-flex items-center gap-1 font-semibold text-destructive">
+            <AlertTriangle className="size-3.5" /> Action Needed
+          </span>
+        ) : noPending ? (
+          <span className="inline-flex items-center gap-1 font-medium text-success">
+            <CheckCircle2 className="size-3.5" /> No Pending Reconciliation
+          </span>
+        ) : kpi.has_delta ? (
+          <>
+            <span className={cn("inline-flex items-center font-semibold tabular-nums", toneClass)}>
+              <DeltaArrow className="size-3.5" />
+              {formatPercent(Math.abs(kpi.delta))}
+            </span>
+            <span className="text-muted-foreground">vs previous month</span>
+          </>
+        ) : null}
+      </div>
+
+      {note ? (
+        <p className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-snug text-warning">
+          <RefreshCw className="mt-px size-3 shrink-0" />
+          <span>{note}</span>
+        </p>
       ) : null}
 
-      {/* 5 + 6. Trend (↑/↓ %) + "vs previous month". "Action Needed" for pending;
-          nothing when there's no real delta (never a fabricated 0%). */}
-      {actionNeeded ? (
-        <div className="mt-3">
-          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
-            <AlertTriangle className="size-3" /> Action Needed
-          </span>
+      {missing ? null : trend && trend.length > 1 ? (
+        <div title={trendLabel}>
+          <Sparkline values={trend} />
         </div>
-      ) : noPending ? (
-        <div className="mt-3">
-          <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
-            <CheckCircle2 className="size-3" /> No Pending Reconciliation
-          </span>
-        </div>
-      ) : kpi.has_delta ? (
-        <div className="mt-3 flex items-center gap-1.5 text-xs">
-          <span className={cn("inline-flex items-center gap-0.5 font-semibold", toneClass)}>
-            <DeltaArrow className="size-3.5" />
-            {formatPercent(Math.abs(kpi.delta))}
-          </span>
-          <span className="text-muted-foreground">vs previous month</span>
-        </div>
+      ) : trendLoading ? (
+        <Skeleton aria-label="Loading trend" className="mt-2 h-8 w-full opacity-60" />
+      ) : trendNote ? (
+        <p className="mt-2 flex h-8 items-end text-[11px] leading-tight text-muted-foreground">{trendNote}</p>
       ) : null}
 
-      {/* Supplementary context (e.g. excluded breakdown) — below the required order. */}
-      {kpi.subtitle ? (
-        <div className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-snug text-muted-foreground">
-          {kpi.subtitle}
-        </div>
-      ) : null}
+      <div className="mt-auto pt-2">
+        {updatedAt ? (
+          <Freshness updatedAt={updatedAt} />
+        ) : basis ? (
+          <span className="block truncate text-[11px] text-muted-foreground">{basis}</span>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+/** Header shared by every KPI state: icon tile + badge on top, label (+ ⓘ) below. */
+function KpiHeader({ label, icon: Icon, details, children }: { label: string; icon: LucideIcon; details?: string[]; children?: ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-2">
+        <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary dark:bg-primary/15">
+          <Icon className="size-5" />
+        </span>
+        <div className="shrink-0">{children}</div>
+      </div>
+      <div className="relative mt-3 flex items-center gap-1 text-[13px] font-medium leading-tight text-muted-foreground">
+        <span className="line-clamp-2 min-w-0" title={label}>
+          {label}
+        </span>
+        {details && details.length > 0 ? (
+          <span className="group/hint shrink-0">
+            <button
+              type="button"
+              aria-label={`About ${label}: ${details.join(" ")}`}
+              className="grid place-items-center rounded text-muted-foreground/60 hover:text-foreground"
+            >
+              <Info className="size-3.5" />
+            </button>
+            <span
+              role="tooltip"
+              className="pointer-events-none invisible absolute inset-x-0 top-full z-30 mt-1.5 space-y-1 rounded-lg border border-border bg-popover p-2.5 text-[11px] font-normal leading-snug text-popover-foreground opacity-0 shadow-card-hover transition-opacity duration-150 group-focus-within/hint:visible group-focus-within/hint:opacity-100 group-hover/hint:visible group-hover/hint:opacity-100"
+            >
+              {details.map((d) => (
+                <span key={d} className="block">
+                  {d}
+                </span>
+              ))}
+            </span>
+          </span>
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+/** Loading placeholder with the same footprint as a KPI card (no layout shift). */
+export function KpiCardSkeleton({
+  label,
+  kpiKey,
+  index,
+  message,
+  badge,
+}: {
+  label?: string;
+  kpiKey?: string;
+  index?: number;
+  message?: string;
+  /** Status badge for a known state (e.g. Recalculating) while the value loads. */
+  badge?: ReactNode;
+}) {
+  return (
+    <div aria-busy="true" aria-label={label ? `${label} loading` : "Loading"} style={stagger(index)} className={cn(SHELL, "border-border")}>
+      {label ? (
+        <KpiHeader label={label} icon={kpiIcon(kpiKey ?? "")}>
+          {badge}
+        </KpiHeader>
+      ) : (
+        <Skeleton className="h-16 w-40" />
+      )}
+      <Skeleton className="mt-2 h-7 w-32" />
+      <Skeleton className="mt-2 h-3.5 w-28" />
+      {message ? <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{message}</p> : <Skeleton className="mt-3 h-8 w-full" />}
+    </div>
+  );
+}
+
+/** Whole-endpoint failure: an explicit unavailable state (never ₹0) with Retry. */
+export function KpiCardUnavailable({
+  label,
+  kpiKey,
+  onRetry,
+  retrying,
+  index,
+}: {
+  label: string;
+  kpiKey: string;
+  onRetry?: () => void;
+  retrying?: boolean;
+  index?: number;
+}) {
+  return (
+    <article aria-label={label} style={stagger(index)} className={cn(SHELL, "border-border")}>
+      <KpiHeader label={label} icon={kpiIcon(kpiKey)}>
+        <SourceBadge status="unavailable" />
+      </KpiHeader>
+      <div className="mt-2 flex items-center gap-2 text-muted-foreground">
+        <WifiOff className="size-5 shrink-0" />
+        <span className="text-lg font-semibold">Unavailable</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">Live value could not be loaded. No number is shown.</p>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={retrying}
+          className="mt-auto inline-flex w-fit items-center gap-1.5 pt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-60"
+        >
+          <RefreshCw className={cn("size-3.5", retrying && "animate-spin")} />
+          {retrying ? "Retrying…" : "Retry"}
+        </button>
+      ) : null}
+    </article>
   );
 }

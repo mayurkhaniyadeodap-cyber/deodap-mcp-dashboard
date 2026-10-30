@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
 /**
- * Shared dark-theme tooltip for every Recharts chart. Used via the Recharts
- * `content` prop (`content={<ChartTooltip valueFormatter={…} />}`) so we fully
- * control colors — the default <Tooltip> renders item text in the series color,
- * which is unreadable on our dark surface.
+ * Shared tooltip for every Recharts chart. Used via the Recharts `content` prop
+ * (`content={<ChartTooltip valueFormatter={…} />}`) so we fully control colours —
+ * the default <Tooltip> renders item text in the series colour, which is unreadable
+ * on our surfaces. Themed with the popover tokens, so it follows dark/light mode.
  *
  * Recharts injects `active` / `payload` / `label`; the rest are our own props.
  */
@@ -33,22 +33,9 @@ export function ChartTooltip({ active, payload, label, valueFormatter, total, hi
   if (!active || !payload || payload.length === 0) return null;
 
   return (
-    <div
-      style={{
-        background: "#1a2236",
-        border: "1px solid #334155",
-        borderRadius: 10,
-        padding: "11px 15px",
-        color: "#f1f5f9",
-        fontSize: 13,
-        lineHeight: 1.55,
-        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
-      }}
-    >
-      {!hideLabel && (label || label === 0) ? (
-        <div style={{ marginBottom: 6, fontWeight: 600, color: "#f1f5f9" }}>{label}</div>
-      ) : null}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div className="animate-fade-in rounded-lg border border-border bg-popover px-3.5 py-2.5 text-[13px] leading-relaxed text-popover-foreground shadow-card-hover">
+      {!hideLabel && (label || label === 0) ? <div className="mb-1.5 font-semibold">{label}</div> : null}
+      <div className="flex flex-col gap-1">
         {payload.map((item, i) => {
           const name = String(item.name ?? item.dataKey ?? "");
           const raw = Number(item.value ?? 0);
@@ -56,10 +43,10 @@ export function ChartTooltip({ active, payload, label, valueFormatter, total, hi
           const formatted = valueFormatter ? valueFormatter(raw, name, item) : item.value;
           const pct = total && total > 0 ? ` (${((raw / total) * 100).toFixed(1)}%)` : "";
           return (
-            <div key={`${name}-${i}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-              <span style={{ color: "#cbd5e1" }}>{name}:</span>
-              <span style={{ color: "#f1f5f9", fontWeight: 600 }}>
+            <div key={`${name}-${i}`} className="flex items-center gap-2">
+              <span className="size-2 shrink-0 rounded-sm" style={{ background: color }} />
+              <span className="text-muted-foreground">{name}:</span>
+              <span className="font-semibold tabular-nums">
                 {formatted}
                 {pct}
               </span>

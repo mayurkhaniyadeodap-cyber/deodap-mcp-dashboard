@@ -1,16 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
-
-/** Relative "Xs / Xm / Xh ago" from an epoch-ms timestamp. */
-function relTime(ms: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
-}
+import { relTime } from "@/utils/format";
 
 /**
  * "Updated 15s ago" — data-freshness label to sit beside a SourceBadge.

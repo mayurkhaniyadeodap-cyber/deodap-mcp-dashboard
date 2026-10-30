@@ -98,3 +98,24 @@ class PendingReconciliationResponse(BaseModel):
     source: Literal["live", "mock", "unavailable"] = "mock"
     date_field: str = "order_date"
     maturing: bool = False
+
+
+class KpiTrendBucket(BaseModel):
+    """One equal slice of the selected range (inclusive dates)."""
+
+    date_from: str
+    date_to: str
+
+
+class KpiTrendsResponse(BaseModel):
+    """Real per-period values behind the KPI sparklines. The selected range is split
+    into up to 7 equal periods and each KPI is computed per period with the SAME MCP
+    query as its headline value. `series[key]` is present only when EVERY period
+    loaded (a partial line would misrepresent the trend); keys: total_billing,
+    total_shipments, average_cost, total_cod, pending_recon. A range of one day has
+    no periods (no sparkline)."""
+
+    buckets: list[KpiTrendBucket] = []
+    series: dict[str, list[float]] = {}
+    source: Literal["live", "mock", "unavailable"] = "unavailable"
+    date_field: str = "order_date"

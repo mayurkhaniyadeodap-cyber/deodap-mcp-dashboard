@@ -85,7 +85,7 @@ export default function TrendsPage() {
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="month" stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} />
               <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
-              <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
+              <Tooltip cursor={{ fill: "hsl(var(--foreground) / 0.05)" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Bar dataKey="cumulative" name="Identified (cumulative)" fill={CHART_COLORS.amber} radius={[4, 4, 0, 0]} maxBarSize={72}>
                 {(rec?.points ?? []).map((p, i) => (
                   <Cell key={i} fill={CHART_COLORS.amber} fillOpacity={p.partial || p.gap ? 0.4 : 1} />

@@ -299,11 +299,15 @@ async def _refresh_claimable(key: tuple) -> None:
             return
         async with live_support.background_job_sem:  # one heavy enumeration at a time (global)
             try:
-                resp = await _claimable_live(*key)
+                with live_support.background_timeout():  # slow tools; no request waits
+                    resp = await _claimable_live(*key)
                 _claimable_warm[key] = (time.monotonic(), resp)
+                live_support.log_fetch("claimable-rate", key, "live-mcp", _claimable_warm[key][0],
+                                       mode=live_support.rebuild_mode())
                 logger.info("claimable: warm refresh done for window=%s → %.0f", key, resp.claimable_amount)
-            except Exception:  # noqa: BLE001 — keep last good, log, never fabricate
+            except Exception as exc:  # noqa: BLE001 — keep last good, log, never fabricate
                 logger.exception("claimable: warm refresh failed for %s; keeping last good", key)
+                live_support.note_warm_failure("claimable", key, exc)
 
 
 class _claimable_inflight_guard:
@@ -387,8 +391,10 @@ async def get_claimable_rate(
     if hit is not None:
         ts, resp = hit
         if (now - ts) < _CLAIMABLE_TTL_SECONDS:
+            live_support.log_fetch("claimable-rate", key, "warm-cache", ts)
             return resp.model_copy(update={"maturing": mat})
         _spawn_refresh(key)  # stale → refresh in background, serve the warm figure now
+        live_support.log_fetch("claimable-rate", key, "warm-cache", ts, detail="stale; rebuild queued")
         return resp.model_copy(update={"recalculating": True, "maturing": mat})
 
     # Nothing for this window yet — never block. Compute it in the background and
@@ -397,6 +403,9 @@ async def get_claimable_rate(
     _spawn_refresh(key)
     fallback = _claimable_warm.get((None, None)) or next(iter(_claimable_warm.values()), None)
     if fallback is not None:
+        other = next((k for k, v in _claimable_warm.items() if v is fallback), None)
+        live_support.log_fetch("claimable-rate", key, "warm-cache-OTHER-RANGE", fallback[0],
+                               detail=f"not computed yet; showing {other} flagged recalculating")
         return fallback[1].model_copy(update={"recalculating": True, "maturing": mat})
     return ClaimableRateResponse(source="mock", computing=True, maturing=mat)
 
@@ -538,12 +547,16 @@ async def _refresh_lines(key: tuple) -> None:
             return
         async with live_support.background_job_sem:  # global cap (shared with claimable/recovery)
             try:
-                data = await _build_lines(*key)
+                with live_support.background_timeout():  # slow tools; no request waits
+                    data = await _build_lines(*key)
                 _lines_cache[key] = (time.monotonic(), data)
+                live_support.log_fetch("dispute-lines", key, "live-mcp", _lines_cache[key][0],
+                                       mode=live_support.rebuild_mode(), detail=f"min_diff={key[2]}")
                 # Each _LinesData holds thousands of rows → bound hard to avoid growth.
                 live_support.prune_cache(_lines_cache, 8)
-            except Exception:  # noqa: BLE001 — keep last good, never fabricate
+            except Exception as exc:  # noqa: BLE001 — keep last good, never fabricate
                 logger.exception("dispute-lines: build failed for %s; keeping last good", key)
+                live_support.note_warm_failure("dispute-lines", key, exc)
 
 
 def _spawn_lines_refresh(key: tuple) -> None:
@@ -585,8 +598,11 @@ def _serve_lines_source(key: tuple) -> tuple["_LinesData | None", bool, bool]:
     fallback warm view + recalc (bg build), or computing if nothing is warm yet."""
     hit = _lines_cache.get(key)
     if hit is not None and (time.monotonic() - hit[0]) < _LINES_TTL_SECONDS:
+        live_support.log_fetch("dispute-lines", key, "warm-cache", hit[0], detail=f"min_diff={key[2]}")
         return hit[1], False, False
     _spawn_lines_refresh(key)  # build/refresh off the request path
+    live_support.log_fetch("dispute-lines", key, "warm-cache" if hit else "warm-cache-OTHER-RANGE",
+                           hit[0] if hit else None, detail=f"min_diff={key[2]}; rebuild queued")
     if hit is not None:
         return hit[1], False, True  # stale
     fb = _fallback_lines_data()

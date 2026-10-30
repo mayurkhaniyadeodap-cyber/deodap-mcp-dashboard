@@ -10,7 +10,8 @@ const CACHE_LABEL: Record<CacheState, string> = {
 };
 
 /**
- * Live / Sample provenance badge for a card or chart header. Status is always
+ * Live / Sample / Unavailable provenance badge for a card or chart header. Each
+ * state carries its own text, so the meaning never depends on colour alone. Status is always
  * driven by GET /api/_meta/sources (never hardcoded per-component). While the
  * metadata is loading `status` is undefined and the badge renders nothing, so
  * there is no layout jump.
@@ -23,11 +24,27 @@ export function SourceBadge({
   status,
   className,
   cache,
+  recalculating,
 }: {
   status?: SourceStatus;
   className?: string;
   cache?: CacheState;
+  /** A legitimate recalculation is in progress (warm-cache endpoints): the label says
+   *  so instead of "Live", so a figure that is being rebuilt is never read as final. */
+  recalculating?: boolean;
 }) {
+  if (recalculating) {
+    return (
+      <Badge
+        variant="warning"
+        className={cn("gap-1.5", className)}
+        title="Recalculating for the selected range — the figure will update when it finishes."
+      >
+        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-warning" />
+        Recalculating
+      </Badge>
+    );
+  }
   if (cache) {
     const refreshing = cache !== "cached";
     return (
@@ -44,8 +61,8 @@ export function SourceBadge({
   if (!status) return null;
   if (status === "unavailable") {
     return (
-      <Badge variant="warning" className={cn("gap-1.5", className)} title="Live data unavailable — Ship MCP unreachable">
-        <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+      <Badge variant="danger" className={cn("gap-1.5", className)} title="Live data unavailable — Ship MCP unreachable">
+        <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
         Unavailable
       </Badge>
     );
@@ -53,15 +70,12 @@ export function SourceBadge({
   const live = status === "live";
   return (
     <Badge
-      variant={live ? "success" : "muted"}
+      variant={live ? "success" : "warning"}
       className={cn("gap-1.5", className)}
-      title={live ? "Live MCP data" : "Sample data\nNo live source currently exists."}
+      title={live ? "Live MCP data" : "Sample data — illustrative only, not live.\nNo live source currently exists."}
     >
-      <span
-        aria-hidden
-        className={cn("size-1.5 rounded-full", live ? "bg-success" : "bg-muted-foreground/60")}
-      />
-      {live ? "LIVE" : "Sample"}
+      <span aria-hidden className={cn("size-1.5 rounded-full", live ? "bg-success" : "bg-warning")} />
+      {live ? "Live" : "Sample"}
     </Badge>
   );
 }

@@ -171,6 +171,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/kpi-trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard Kpi Trends */
+        get: operations["get_dashboard_kpi_trends_api_dashboard_kpi_trends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bills": {
         parameters: {
             query?: never;
@@ -703,6 +720,40 @@ export interface paths {
         get: operations["scheduler_status_api__status_schedulers_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/refresh/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Refresh Status */
+        get: operations["refresh_status_api_refresh_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Refresh */
+        post: operations["start_refresh_api_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1458,6 +1509,50 @@ export interface components {
              */
             unavailable: boolean;
         };
+        /**
+         * KpiTrendBucket
+         * @description One equal slice of the selected range (inclusive dates).
+         */
+        KpiTrendBucket: {
+            /** Date From */
+            date_from: string;
+            /** Date To */
+            date_to: string;
+        };
+        /**
+         * KpiTrendsResponse
+         * @description Real per-period values behind the KPI sparklines. The selected range is split
+         *     into up to 7 equal periods and each KPI is computed per period with the SAME MCP
+         *     query as its headline value. `series[key]` is present only when EVERY period
+         *     loaded (a partial line would misrepresent the trend); keys: total_billing,
+         *     total_shipments, average_cost, total_cod, pending_recon. A range of one day has
+         *     no periods (no sparkline).
+         */
+        KpiTrendsResponse: {
+            /**
+             * Buckets
+             * @default []
+             */
+            buckets: components["schemas"]["KpiTrendBucket"][];
+            /**
+             * Series
+             * @default {}
+             */
+            series: {
+                [key: string]: number[];
+            };
+            /**
+             * Source
+             * @default unavailable
+             * @enum {string}
+             */
+            source: "live" | "mock" | "unavailable";
+            /**
+             * Date Field
+             * @default order_date
+             */
+            date_field: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1719,6 +1814,139 @@ export interface components {
              * @default false
              */
             recalculating: boolean;
+        };
+        /** RefreshDatasetStatus */
+        RefreshDatasetStatus: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Module */
+            module: string;
+            /**
+             * Query Keys
+             * @default []
+             */
+            query_keys: string[];
+            /** Date From */
+            date_from?: string | null;
+            /** Date To */
+            date_to?: string | null;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "running" | "success" | "failed";
+            /** Error */
+            error?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+        };
+        /** RefreshRequest */
+        RefreshRequest: {
+            /** From */
+            from?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /** RefreshStartResponse */
+        RefreshStartResponse: {
+            /** Accepted */
+            accepted: boolean;
+            /** Message */
+            message: string;
+            status: components["schemas"]["RefreshStatus"];
+        };
+        /** RefreshStatus */
+        RefreshStatus: {
+            /**
+             * Job Id
+             * @default 0
+             */
+            job_id: number;
+            /**
+             * State
+             * @default idle
+             * @enum {string}
+             */
+            state: "idle" | "running" | "success" | "partial" | "failed";
+            /**
+             * Running
+             * @default false
+             */
+            running: boolean;
+            /** Trigger */
+            trigger?: ("manual" | "scheduled") | null;
+            /** Triggered By */
+            triggered_by?: string | null;
+            /** Date From */
+            date_from?: string | null;
+            /** Date To */
+            date_to?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Completed
+             * @default 0
+             */
+            completed: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Datasets
+             * @default []
+             */
+            datasets: components["schemas"]["RefreshDatasetStatus"][];
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Last Success From */
+            last_success_from?: string | null;
+            /** Last Success To */
+            last_success_to?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Mcp Requests
+             * @default 0
+             */
+            mcp_requests: number;
+            /**
+             * Mcp Round Trips
+             * @default 0
+             */
+            mcp_round_trips: number;
+            /**
+             * Mcp Deduplicated
+             * @default 0
+             */
+            mcp_deduplicated: number;
+            /**
+             * Auto Refresh Enabled
+             * @default false
+             */
+            auto_refresh_enabled: boolean;
+            /**
+             * Interval Hours
+             * @default 0
+             */
+            interval_hours: number;
+            /** Next Scheduled At */
+            next_scheduled_at?: string | null;
         };
         /**
          * Role
@@ -2408,6 +2636,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CourierBillingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_kpi_trends_api_dashboard_kpi_trends_get: {
+        parameters: {
+            query?: {
+                /** @description Start date YYYY-MM-DD */
+                from?: string | null;
+                /** @description End date YYYY-MM-DD */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KpiTrendsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3478,6 +3740,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SchedulersResponse"];
+                };
+            };
+        };
+    };
+    refresh_status_api_refresh_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStatus"];
+                };
+            };
+        };
+    };
+    start_refresh_api_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

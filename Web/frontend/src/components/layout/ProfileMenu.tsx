@@ -29,16 +29,17 @@ export function ProfileMenu() {
       trigger={({ toggle, open }) => (
         <button
           onClick={toggle}
+          aria-label={`Account menu for ${user.name}`}
           className={cn(
-            "flex items-center gap-2 rounded-md border border-border bg-card py-1.5 pl-1.5 pr-2 transition-colors hover:bg-accent",
+            "flex h-10 items-center gap-2 rounded-lg py-1 pl-1 pr-1.5 transition-colors hover:bg-accent",
             open && "bg-accent",
           )}
         >
-          <span className="grid size-7 place-items-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
+          <span className="grid size-9 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
             {initials(user.name)}
           </span>
-          <span className="hidden text-left sm:block">
-            <span className="block text-sm font-medium leading-tight text-foreground">
+          <span className="hidden text-left min-[1600px]:block">
+            <span className="block text-sm font-semibold leading-tight text-foreground">
               {user.name}
             </span>
             <span className="block text-xs leading-tight text-muted-foreground">

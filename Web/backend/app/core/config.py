@@ -93,12 +93,23 @@ class Settings(BaseSettings):
     # 30s clears their latency with headroom while still failing well before a page
     # would truly hang. Override via MCP_TIMEOUT_SECONDS in the env.
     mcp_timeout_seconds: float = 30.0
+    # Per-call timeout for BACKGROUND work that no user request is waiting on — the
+    # full refresh and the warm-cache rebuilds (dashboard / claimable / savings /
+    # dispute lines / recovery). weight_reconciliation_summary and
+    # reconciliation_disputes measured 47–72s per call (Oct 2026), so the 30s request
+    # timeout above made those jobs fail every time. Page requests keep the 30s cap.
+    background_mcp_timeout_seconds: float = 180.0
     # Global cap on SIMULTANEOUS real MCP round-trips (single-flight/cache hits do
     # NOT take a slot). The Ship MCP contends badly under load — a ~5s tool balloons
     # to ~18s when ~19 calls fire at once (which a Retry storm does). Bounding total
     # concurrency to a conservative default keeps each round-trip fast. Tune via
     # MCP_MAX_CONCURRENCY; it never reduces, skips, or samples data — only paces calls.
     mcp_max_concurrency: int = 6
+    # Of those slots, at most this many may be used by BACKGROUND work (the 30-minute
+    # full refresh, warm-cache rebuilds, KPI sparklines). The rest stay free for the
+    # page a user just opened, so a running refresh never queues a page load behind
+    # ~100 background calls. Background work still completes, just at this pace.
+    mcp_background_max_concurrency: int = 3
     # When the live MCP call fails we serve an honest "unavailable" state (empty
     # data, source="unavailable") — NEVER fixture numbers. This flag lets local dev
     # opt back into the mock fixtures; it must stay false in production.
@@ -107,6 +118,30 @@ class Settings(BaseSettings):
     # proxy — never ship to production). Off by default; set ENABLE_MCP_DEBUG=true
     # only for local dev.
     enable_mcp_debug: bool = False
+
+    # --- Full live-data refresh ("Fetch Data Now" + automatic refresh) ---
+    # A background job re-fetches every dashboard dataset from the Ship MCP for one
+    # date window (see services/refresh_service.py). The automatic run refreshes the
+    # frontend's DEFAULT window (Last 30 Days) every AUTO_REFRESH_INTERVAL_HOURS; the
+    # manual button refreshes whatever window the user has selected. Only one full
+    # refresh runs at a time (manual and scheduled share the same job slot).
+    auto_refresh_enabled: bool = True
+    auto_refresh_interval_hours: float = 0.5  # every 30 minutes
+    # A SCHEDULED run reuses a slow warm-cache dataset (dashboard / claimable / savings /
+    # dispute lines / recovery) that its own scheduler rebuilt within this many
+    # seconds, instead of rebuilding it again, and is skipped entirely if a refresh of
+    # the same window succeeded this recently. The manual button never reuses.
+    auto_refresh_reuse_seconds: float = 900.0
+    # First automatic run after startup — delayed so the existing warm-cache
+    # schedulers finish their startup fan-out before a full refresh adds load.
+    auto_refresh_initial_delay_seconds: float = 300.0
+    # The frontend computes "Last 30 Days" in the user's LOCAL date (IST); the
+    # scheduled refresh uses the same calendar day so it warms the exact window the
+    # default dashboard requests. IST has no DST, so a fixed offset is exact.
+    auto_refresh_utc_offset_minutes: int = 330
+    # Upper bound for ONE dataset inside a refresh (the slowest, claimable-rate, is
+    # ~260s and may queue behind other heavy enumerations on the shared job lock).
+    refresh_dataset_timeout_seconds: float = 1200.0
 
     # --- Security hardening (Phase 5, additive) ---
     # Response security headers. Enabled by default; CSP is tuned for a Vite React

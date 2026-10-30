@@ -72,7 +72,6 @@ export default function CodPage() {
   const pending = useCodPending();
   const intel = useCodIntelligence();
   const [statusFilter, setStatusFilter] = useState("all");
-  if (isError) return <PageError onRetry={() => refetch()} />;
 
   // Provenance drives the badges and flips to Unavailable/Sample on fallback.
   const unavailable = data?.source === "unavailable";
@@ -123,6 +122,9 @@ export default function CodPage() {
   const pendingRows = (pending.data?.rows ?? []) as Pending[];
   const filteredPending = statusFilter === "all" ? pendingRows : pendingRows.filter((r) => r.status === statusFilter);
   const pendingTable = useTable<Pending>({ data: filteredPending, searchKeys: ["courier"], initialSort: { key: "pending", dir: "desc" }, pageSize: 10 });
+
+  // After every hook (rules of hooks): an error state renders the error card.
+  if (isError) return <PageError onRetry={() => refetch()} />;
 
   return (
     <div className="space-y-6">
@@ -294,7 +296,7 @@ export default function CodPage() {
               <CartesianGrid stroke={CHART_AXIS.grid} vertical={false} />
               <XAxis dataKey="week" stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} />
               <YAxis stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} width={96} />
-              <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
+              <Tooltip cursor={{ fill: "hsl(var(--foreground) / 0.05)" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="collected" name="COD Value (collected)" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} />
               <Bar dataKey="remitted" name="COD Remitted" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} />
@@ -316,7 +318,7 @@ export default function CodPage() {
               <CartesianGrid stroke={CHART_AXIS.grid} horizontal={false} />
               <XAxis type="number" stroke={CHART_AXIS.stroke} tick={CHART_AXIS.tick} tickFormatter={(v) => formatCurrencyINRCompact(Number(v))} />
               <YAxis type="category" dataKey="courier" stroke={CHART_AXIS.stroke} tick={{ ...CHART_AXIS.tick, fontSize: 11 }} width={84} />
-              <Tooltip cursor={{ fill: "#ffffff08" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
+              <Tooltip cursor={{ fill: "hsl(var(--foreground) / 0.05)" }} content={<ChartTooltip valueFormatter={(v) => formatCurrencyINR(v)} />} />
               <Bar dataKey="pending" name="Pending Amount" fill={CHART_COLORS.amber} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>

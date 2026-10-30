@@ -1,16 +1,24 @@
-import { Calendar, CalendarDays, Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
-import { DATE_PRESET_LABELS, SELECTABLE_PRESETS, useDateRange } from "@/store/dateRange.store";
+import { type DatePreset, DATE_PRESET_LABELS, SELECTABLE_PRESETS, useDateRange } from "@/store/dateRange.store";
 import { formatDateIST } from "@/utils/format";
 
+const TAB_LABELS: Record<DatePreset, string> = {
+  today: "Today",
+  "7d": "7D",
+  "30d": "30D",
+  mtd: "MTD",
+  ytd: "YTD",
+  custom: "Custom",
+};
+
 /**
- * Date-range selector. Selecting a preset updates the shared date-range store,
- * which flows into every date-aware query key → queries refetch automatically
- * (no manual refetch). "Custom Range" opens a picker that only applies on click.
+ * Date-range selector: preset tabs (Today · 7D · 30D · MTD · YTD · Custom). Selecting
+ * one updates the shared date-range store, which flows into every date-aware query
+ * key → queries refetch automatically. "Custom" opens a picker that only applies on
+ * click. The selected IST dates are in the tabs' hover text and the page subtitle.
  */
 export function DateRangePicker() {
   const { preset, from, to, customFrom, customTo, setPreset, setCustomRange } = useDateRange();
@@ -20,12 +28,8 @@ export function DateRangePicker() {
   const [end, setEnd] = useState(customTo);
 
   // "Today" is a still-arriving partial day — say so wherever the range is shown.
-  const label =
-    preset === "custom"
-      ? `${formatDateIST(from)} – ${formatDateIST(to)}`
-      : preset === "today"
-        ? "Today (partial)"
-        : DATE_PRESET_LABELS[preset];
+  const label = preset === "custom" ? "Custom Range" : preset === "today" ? "Today (partial)" : DATE_PRESET_LABELS[preset];
+  const dates = from === to ? formatDateIST(from) : `${formatDateIST(from)} – ${formatDateIST(to)}`;
 
   const openCustom = () => {
     setStart(customFrom || from);
@@ -43,34 +47,32 @@ export function DateRangePicker() {
 
   return (
     <>
-      <Dropdown
-        align="end"
-        trigger={({ toggle, open }) => (
-          <button
-            onClick={toggle}
-            className={cn(
-              "flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent",
-              open && "bg-accent",
-            )}
-          >
-            <Calendar className="size-4 text-muted-foreground" />
-            <span className="hidden sm:inline">{label}</span>
-            <ChevronDown className="size-4 text-muted-foreground" />
-          </button>
-        )}
+      {/* Preset tabs — the date control. The active tab's hover text gives its IST dates. */}
+      <div
+        role="group"
+        aria-label={`Date range: ${label}, ${dates} (IST)`}
+        className="scrollbar-thin flex h-10 max-w-[46vw] items-center overflow-x-auto rounded-lg border border-border bg-card p-1 sm:max-w-none"
       >
-        {SELECTABLE_PRESETS.map((key) => (
-          <DropdownItem key={key} onClick={() => setPreset(key)}>
-            <Check className={cn("size-4", key === preset ? "text-primary" : "opacity-0")} />
-            {key === "today" ? "Today (partial — orders still arriving)" : DATE_PRESET_LABELS[key]}
-          </DropdownItem>
-        ))}
-        <div className="my-1 border-t border-border" />
-        <DropdownItem onClick={openCustom}>
-          <CalendarDays className={cn("size-4", preset === "custom" ? "text-primary" : "text-muted-foreground")} />
-          {DATE_PRESET_LABELS.custom}…
-        </DropdownItem>
-      </Dropdown>
+        {[...SELECTABLE_PRESETS, "custom" as const].map((key) => {
+          const active = key === preset;
+          const hint = key === "today" ? "Today (partial — orders still arriving)" : DATE_PRESET_LABELS[key];
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={active}
+              title={active ? `${hint}: ${dates} (IST)` : hint}
+              onClick={() => (key === "custom" ? openCustom() : setPreset(key))}
+              className={cn(
+                "h-full shrink-0 rounded-md px-2.5 text-xs font-semibold transition-colors duration-150",
+                active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {TAB_LABELS[key]}
+            </button>
+          );
+        })}
+      </div>
 
       <Modal
         open={modalOpen}
@@ -97,7 +99,7 @@ export function DateRangePicker() {
               value={start}
               max={end || undefined}
               onChange={(e) => setStart(e.target.value)}
-              className="h-10 w-full rounded-md border border-border bg-background/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background [color-scheme:dark]"
+              className="h-10 w-full rounded-md border border-border bg-background/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </label>
           <label className="space-y-1.5 text-sm">
@@ -107,7 +109,7 @@ export function DateRangePicker() {
               value={end}
               min={start || undefined}
               onChange={(e) => setEnd(e.target.value)}
-              className="h-10 w-full rounded-md border border-border bg-background/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background [color-scheme:dark]"
+              className="h-10 w-full rounded-md border border-border bg-background/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </label>
         </div>

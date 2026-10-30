@@ -20,8 +20,11 @@ export function AppLayout() {
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <Navbar />
-          <main className="flex-1 px-4 py-6 sm:px-6">
-            <Outlet />
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:py-7">
+            {/* Capped width keeps very wide monitors readable; no page-level h-scroll. */}
+            <div className="mx-auto w-full min-w-0 max-w-[1680px]">
+              <Outlet />
+            </div>
           </main>
         </div>
       </div>

@@ -54,6 +54,10 @@ async def _fetch_live(date_from: str | None, date_to: str | None) -> RecoveryRes
     windows = month_windows(date_from, date_to)
     sem = asyncio.Semaphore(3)
     diffs = await asyncio.gather(*[_month_diff(ws, we, sem) for _, ws, we, _ in windows])
+    # Every month failed → that's an outage, not a series of gaps: raise so the
+    # refresher keeps the last good series instead of storing an all-gap one.
+    if windows and all(d is None for d in diffs):
+        raise mcp_client.MCPUnavailableError("weight_reconciliation_summary failed for every month")
 
     points: list[RecoveryPoint] = []
     cumulative = 0.0
@@ -99,11 +103,15 @@ async def _refresh_recovery(key: tuple) -> None:
             return
         async with live_support.background_job_sem:  # one heavy enumeration at a time (global)
             try:
-                series = await _fetch_live(*key)
+                with live_support.background_timeout():  # slow tools; no request waits
+                    series = await _fetch_live(*key)
                 _recovery_warm[key] = (time.monotonic(), series)
+                live_support.log_fetch("trend-recovery", key, "live-mcp", _recovery_warm[key][0],
+                                       mode=live_support.rebuild_mode())
                 logger.info("recovery: warm refresh done for window=%s → %d points", key, len(series.points))
-            except Exception:  # noqa: BLE001 — keep last good, log, never fabricate
+            except Exception as exc:  # noqa: BLE001 — keep last good, log, never fabricate
                 logger.exception("recovery: warm refresh failed for %s; keeping last good", key)
+                live_support.note_warm_failure("recovery", key, exc)
 
 
 def _spawn_refresh(key: tuple) -> None:
@@ -151,8 +159,10 @@ async def get_recovery(date_from: str | None = None, date_to: str | None = None)
     if hit is not None:
         ts, series = hit
         if (now - ts) < _TTL_SECONDS:
+            live_support.log_fetch("trend-recovery", key, "warm-cache", ts)
             return series
         _spawn_refresh(key)  # stale → refresh in background, serve the warm series now
+        live_support.log_fetch("trend-recovery", key, "warm-cache", ts, detail="stale; rebuild queued")
         return series.model_copy(update={"recalculating": True})
 
     # Nothing for this window yet — never block. Compute it in the background and
@@ -161,5 +171,8 @@ async def get_recovery(date_from: str | None = None, date_to: str | None = None)
     _spawn_refresh(key)
     fallback = _recovery_warm.get((None, None)) or next(iter(_recovery_warm.values()), None)
     if fallback is not None:
+        other = next((k for k, v in _recovery_warm.items() if v is fallback), None)
+        live_support.log_fetch("trend-recovery", key, "warm-cache-OTHER-RANGE", fallback[0],
+                               detail=f"not computed yet; showing {other} flagged recalculating")
         return fallback[1].model_copy(update={"recalculating": True})
     return RecoveryResponse(points=[], source="mock", computing=True)

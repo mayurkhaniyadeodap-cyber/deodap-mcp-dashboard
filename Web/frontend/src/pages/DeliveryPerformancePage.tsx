@@ -26,7 +26,6 @@ const SUMMARY_COLS: Column<MetricRow>[] = [
 
 export default function DeliveryPerformancePage() {
   const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } = useSla();
-  if (isError) return <PageError onRetry={() => refetch()} />;
 
   const unavailable = data?.source === "unavailable";
   const badge = badgeFromSource(data?.source);
@@ -70,6 +69,9 @@ export default function DeliveryPerformancePage() {
         { metric: "On-Time %", value: formatPercent(data.on_time_pct) },
       ]
     : [];
+
+  // After every hook (rules of hooks): an error state renders the error card.
+  if (isError) return <PageError onRetry={() => refetch()} />;
 
   return (
     <div className="space-y-6">

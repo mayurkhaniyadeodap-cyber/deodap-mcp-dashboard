@@ -2,8 +2,8 @@ import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
 
 // Design tokens live as HSL CSS variables in src/index.css (shadcn convention),
-// so `pnpm dlx shadcn add <component>` keeps working in later checkpoints.
-// The DeoDap dark palette is encoded there.
+// so `pnpm dlx shadcn add <component>` keeps working. Both themes (navy dark,
+// cool blue-white light) are encoded there; this file only names them.
 const config: Config = {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -51,6 +51,14 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        elevated: "hsl(var(--elevated))",
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          muted: "hsl(var(--sidebar-muted))",
+          accent: "hsl(var(--sidebar-accent))",
+          border: "hsl(var(--sidebar-border))",
+        },
         // DeoDap semantic accents (used by KPI/status badges & charts)
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
@@ -63,8 +71,8 @@ const config: Config = {
         "surface-gradient": "linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--card-to)) 100%)",
       },
       boxShadow: {
-        card: "0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 0 rgb(0 0 0 / 0.2)",
-        "card-hover": "0 8px 24px -6px rgb(0 0 0 / 0.5)",
+        card: "var(--shadow-card)",
+        "card-hover": "var(--shadow-card-hover)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -80,10 +88,21 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        // Page/card entrance: gentle fade with a small upward move.
+        "fade-up": {
+          from: { opacity: "0", transform: "translateY(6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "fade-up": "fade-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both",
+        "fade-in": "fade-in 0.2s ease-out both",
       },
     },
   },

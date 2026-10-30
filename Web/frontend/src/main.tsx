@@ -20,6 +20,9 @@ const queryClient = new QueryClient({
       // the backend's 60s caches. The navbar Refresh (invalidateQueries) and the
       // per-hook refetchInterval polls still bypass this, so nothing goes stale.
       staleTime: 60_000,
+      // Keep each page's last data for 30 min (default 5): going back to a page shows
+      // it instantly — with its real "Updated Xm ago" — while fresh data loads.
+      gcTime: 30 * 60_000,
     },
   },
 });

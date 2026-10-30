@@ -3,8 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>DeoDap MCP Dashboard</title>
+    <script>
+      // Apply the saved theme before first paint (no dark flash for light-mode users).
+      // Mirrors the zustand "deodap-theme" store; dark stays the default.
+      try {
+        var t = JSON.parse(localStorage.getItem("deodap-theme") || "{}").state;
+        if (t && t.theme === "light") {
+          document.documentElement.classList.remove("dark");
+          document.documentElement.classList.add("light");
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
