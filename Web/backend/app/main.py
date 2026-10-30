@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routers import analytics, auth, bills, dashboard, export, mcp_debug, meta, profile, status, users
+from app.auth import central_sso
 from app.core.config import DEV_JWT_SECRET, settings, validate_required_env
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.hardening import RateLimitMiddleware, SecurityHeadersMiddleware
@@ -67,6 +68,8 @@ app = FastAPI(
 def _startup() -> None:
     # Create tables (idempotent) and seed the first admin from env if empty.
     user_store.init_db_and_seed()
+    # Forget DeoDap Central SSO assertion ids that have expired (replays stay refused until then).
+    central_sso.purge_expired_assertions()
     logger.info("Startup complete (env=%s, mcp_debug=%s).", settings.environment, settings.enable_mcp_debug)
 
 

@@ -10,7 +10,6 @@ import DeliveryPerformancePage from "@/pages/DeliveryPerformancePage";
 import DiscrepanciesPage from "@/pages/DiscrepanciesPage";
 import DisputeLinesPage from "@/pages/DisputeLinesPage";
 import ExportPage from "@/pages/ExportPage";
-import LoginPage from "@/pages/LoginPage";
 import NotFound from "@/pages/NotFound";
 import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
@@ -18,6 +17,7 @@ import TrendsPage from "@/pages/TrendsPage";
 import UsersPage from "@/pages/UsersPage";
 import WeightPage from "@/pages/WeightPage";
 import ZonesPage from "@/pages/ZonesPage";
+import { LoginRoute } from "@/routes/LoginRoute";
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { PublicOnlyRoute } from "@/routes/PublicOnlyRoute";
 import { RoleGuard } from "@/routes/RoleGuard";
@@ -33,7 +33,8 @@ export const router = createBrowserRouter([
     children: [
       {
         element: <AuthLayout />,
-        children: [{ path: "/login", element: <LoginPage /> }],
+        // Inside DeoDap Central there is no login page (sign-in happens in Central).
+        children: [{ path: "/login", element: <LoginRoute /> }],
       },
     ],
   },

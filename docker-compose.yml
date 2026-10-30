@@ -12,7 +12,7 @@ services:
     # Bind to loopback only — this tool must NOT be publicly reachable. Put it
     # behind the VPN / internal proxy, which forwards to 127.0.0.1:8000.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8010:8000"
     env_file:
       - ./Web/backend/.env.production   # copy from Web/backend/.env.example, fill in
     environment:

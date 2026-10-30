@@ -2,15 +2,31 @@
 tool calls — so they are deterministic and offline. NOTHING in app code is changed;
 tests only override the auth dependency and monkeypatch mcp_client.call_tool."""
 
-import importlib
-from types import SimpleNamespace
+import os
+import tempfile
+from pathlib import Path
 
-import pytest
-from fastapi.testclient import TestClient
+# Tests must NEVER reach the live MCP server or touch the local database, even when someone runs
+# plain `pytest` while backend/.env holds the real MCP_URL / MCP_TOKEN. Environment variables win
+# over .env, so set them here, before any app module (and its settings) is imported.
+TEST_MCP_URL = "http://127.0.0.1:9/mcp-test-only"  # port 9 (discard): nothing answers
+TEST_MCP_TOKEN = "test-dummy-token-not-real"
+os.environ["MCP_URL"] = TEST_MCP_URL
+os.environ["MCP_TOKEN"] = TEST_MCP_TOKEN
+os.environ["USE_MOCK_FALLBACK"] = "false"
+if not os.environ.get("DATABASE_URL"):  # scripts/test_mcp_dashboard.ps1 sets its own temp DB
+    _tmp_db = Path(tempfile.mkdtemp(prefix="mcp-tests-")) / "test.db"
+    os.environ["DATABASE_URL"] = "sqlite:///" + _tmp_db.as_posix()
 
-from app.api.deps import get_current_user
-from app.auth.roles import Role
-from app.main import app
+import importlib  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.api.deps import get_current_user  # noqa: E402
+from app.auth.roles import Role  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 class _FakeUser:

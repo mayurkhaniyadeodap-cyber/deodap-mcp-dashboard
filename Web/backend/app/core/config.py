@@ -9,6 +9,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.log_redaction import install_secret_redaction
+
 # The insecure dev fallback secret. Production must override JWT_SECRET; the app
 # refuses to boot in production while jwt_secret still equals this (see main.py).
 DEV_JWT_SECRET = "dev-secret-change-me-please-32chars-min"
@@ -54,6 +56,16 @@ class Settings(BaseSettings):
     jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480  # 8h (Phase 1 spec)
+
+    # --- DeoDap Central single sign-on (optional; see app/auth/central_sso.py) ---
+    # PUBLIC key (Ed25519, PEM) of DeoDap Central. Empty = SSO off and the app behaves exactly as
+    # before (its own login only). Relative paths are resolved against the backend folder. Only a
+    # public key is configured here: no Central secret is ever needed by this app.
+    central_sso_public_key_file: str = ""
+    central_sso_issuer: str = "deodap-central"
+    central_sso_audience: str = "mcp-dashboard"
+    # Upper bound on an assertion's lifetime (exp - iat); Central issues 60-second assertions.
+    central_sso_max_lifetime_seconds: int = 120
 
     # First-admin seed (only used when the users table is empty). No password is
     # baked in — set ADMIN_PASSWORD, or a random one is generated and logged once.
@@ -134,6 +146,9 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+# Keep the MCP token out of every log line from here on (it travels in the connect URL).
+install_secret_redaction(lambda: [settings.mcp_token])
 
 
 def validate_required_env() -> list[str]:

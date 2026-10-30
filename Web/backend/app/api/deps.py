@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.auth import central_sso
 from app.auth.roles import Role
 from app.core.security import JWTError, decode_access_token
 from app.schemas.auth import UserPublic
@@ -53,6 +54,14 @@ def get_current_user(
 ) -> UserPublic:
     if creds is None or not creds.credentials:
         raise _UNAUTHORIZED
+    # DeoDap Central single sign-on: an Ed25519 assertion verified with Central's PUBLIC key
+    # (only when CENTRAL_SSO_PUBLIC_KEY_FILE is configured). Everything else is the app's own
+    # HS256 login token, handled exactly as before.
+    if central_sso.looks_like_central_assertion(creds.credentials):
+        user = central_sso.authenticate(creds.credentials)
+        if user is None:
+            raise _UNAUTHORIZED
+        return user
     try:
         payload = decode_access_token(creds.credentials)
     except JWTError as exc:

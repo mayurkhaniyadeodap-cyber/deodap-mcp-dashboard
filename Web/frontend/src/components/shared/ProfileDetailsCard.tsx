@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { isCentralSso } from "@/lib/authMode";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -64,7 +65,8 @@ export function ProfileDetailsCard() {
         <CardTitle className="flex items-center gap-2">
           <UserRound className="size-4 text-primary" /> Profile Details
         </CardTitle>
-        {!editing && !isLoading && (
+        {/* Central SSO: name and email come from DeoDap Central (read-only here). */}
+        {!editing && !isLoading && !isCentralSso() && (
           <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
             <Pencil className="size-4" /> Edit Profile
           </Button>

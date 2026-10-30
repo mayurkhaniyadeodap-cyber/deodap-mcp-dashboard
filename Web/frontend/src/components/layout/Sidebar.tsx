@@ -2,6 +2,7 @@ import { Boxes, ChevronLeft, Lock, LogOut } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { NAV_GROUPS, type NavItem } from "@/config/nav";
 import { useAuth } from "@/hooks/useAuth";
+import { isCentralSso } from "@/lib/authMode";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
 
@@ -81,7 +82,8 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Logout */}
+      {/* Logout (Central SSO: sign out in DeoDap Central instead) */}
+      {!isCentralSso() && (
       <div className="border-t border-border p-3">
         <button
           onClick={logout}
@@ -95,6 +97,7 @@ function SidebarContent({
           {!collapsed && <span>Logout</span>}
         </button>
       </div>
+      )}
     </div>
   );
 }

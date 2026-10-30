@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
+import { isCentralSso } from "@/lib/authMode";
 import { apiErrorMessage } from "@/services/api";
 import { useChangePassword } from "@/services/profile.service";
 
@@ -28,6 +29,27 @@ type PasswordForm = z.infer<typeof passwordSchema>;
 
 /** Shared Change Password card (reused by /profile and Settings → Security). */
 export function ChangePasswordCard() {
+  return isCentralSso() ? <CentralManagedPasswordCard /> : <LocalChangePasswordCard />;
+}
+
+/** Central SSO: there is no MCP password to change; sign-in is managed by DeoDap Central. */
+function CentralManagedPasswordCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="size-4 text-primary" /> Password
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">
+        You are signed in with your DeoDap Central account. Change your password in DeoDap Central (account
+        menu → Change password).
+      </CardContent>
+    </Card>
+  );
+}
+
+function LocalChangePasswordCard() {
   const { toast } = useToast();
   const change = useChangePassword();
   const {

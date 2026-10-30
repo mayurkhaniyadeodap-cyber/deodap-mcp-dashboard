@@ -10,6 +10,7 @@ from datetime import date, datetime
 from enum import Enum
 
 from sqlalchemy import Boolean, Date, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -43,6 +44,40 @@ class User(Base):
     # drift from it.
     role: Mapped[str] = mapped_column(String(32), default="employee")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SsoIdentity(Base):
+    """Links an MCP user to an external single sign-on identity (DeoDap Central user id).
+
+    A separate table (not a column on `users`) so `create_all` adds it to existing databases
+    without a migration. An account is only ever linked when it was CREATED for that identity,
+    never by matching an email, so an existing local account cannot be taken over through SSO.
+    """
+
+    __tablename__ = "sso_identities"
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_sso_identity_subject"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    subject: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SsoUsedAssertion(Base):
+    """Ids (`jti`) of DeoDap Central SSO assertions already accepted, kept until they expire.
+
+    Stored in the database (not in memory) so a replay is refused even after a restart, and across
+    several worker processes. Expired rows are deleted regularly (app/auth/central_sso.py).
+    """
+
+    __tablename__ = "sso_used_assertions"
+
+    jti: Mapped[str] = mapped_column(String(128), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
 class Courier(Base):

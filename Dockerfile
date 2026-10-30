@@ -2,7 +2,7 @@
 # Build context = repo root.
 
 # ---- Stage 1: build the Vite frontend ----
-FROM node:20-slim AS frontend
+FROM node:22-slim AS frontend
 WORKDIR /fe
 RUN corepack enable
 # Copy manifests first for layer caching.

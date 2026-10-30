@@ -2,6 +2,7 @@ import { ChevronDown, LogOut, Settings, Users, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { useAuth } from "@/hooks/useAuth";
+import { isCentralSso } from "@/lib/authMode";
 import { cn } from "@/lib/utils";
 import { ROLE_LABELS } from "@/types/app";
 
@@ -65,11 +66,13 @@ export function ProfileMenu() {
           <Settings className="size-4" /> Configuration
         </DropdownItem>
       </div>
-      <div className="border-t border-border py-1">
-        <DropdownItem onClick={logout} className="text-destructive hover:bg-destructive/10">
-          <LogOut className="size-4" /> Logout
-        </DropdownItem>
-      </div>
+      {!isCentralSso() && (
+        <div className="border-t border-border py-1">
+          <DropdownItem onClick={logout} className="text-destructive hover:bg-destructive/10">
+            <LogOut className="size-4" /> Logout
+          </DropdownItem>
+        </div>
+      )}
     </Dropdown>
   );
 }

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
 import { ROLE_LABELS } from "@/types/app";
 import { formatDateTimeIST } from "@/utils/format";
+import { isCentralSso } from "@/lib/authMode";
 
 /** Standard JWT registered claims we surface (epoch SECONDS). */
 interface JwtClaims {
@@ -77,7 +78,11 @@ export function SecuritySection() {
               <span className="font-medium text-foreground">{formatDateTimeIST(claims.exp * 1000)}</span>
             </div>
           ) : null}
-          {!hasSessionInfo ? (
+          {isCentralSso() ? (
+            <div className="text-muted-foreground">
+              Signed in with DeoDap Central (single sign-on). Sign out from DeoDap Central.
+            </div>
+          ) : !hasSessionInfo ? (
             <div className="text-muted-foreground">Session information is not available.</div>
           ) : null}
         </CardContent>

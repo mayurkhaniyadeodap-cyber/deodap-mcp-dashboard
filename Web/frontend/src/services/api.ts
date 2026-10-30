@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import { isCentralSso } from "@/lib/authMode";
 import { useAuthStore } from "@/store/auth.store";
 
 /**
@@ -16,22 +17,24 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Request interceptor: attach the bearer token if present.
+// Request interceptor: attach the bearer token if present. (Central SSO: never; the DeoDap Central
+// gateway adds the user's token itself, server-side.)
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
-  if (token) {
+  if (token && !isCentralSso()) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-// Response interceptor: on 401, clear auth and bounce to /login (once).
+// Response interceptor: on 401, clear auth and bounce to /login (once). Central SSO: clear only;
+// ProtectedRoute then re-checks /api/me and explains how to reopen from DeoDap Central.
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().clear();
-      if (window.location.pathname !== "/login") {
+      if (!isCentralSso() && window.location.pathname !== "/login") {
         window.location.assign("/login");
       }
     }

@@ -115,7 +115,7 @@ def _mask(text: str) -> str:
     """Mask the token anywhere it appears (URLs, messages) before logging."""
     token = settings.mcp_token
     if token and text and token in text:
-        text = text.replace(token, f"{token[:4]}…(masked)")
+        text = text.replace(token, "(masked)")  # no part of the token is ever shown
     return text
 
 
