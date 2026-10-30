@@ -3,7 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { ToastProvider } from "@/components/ui/toast";
 import { detectAuthMode } from "@/lib/authMode";
-import { enterCentralSso } from "@/store/auth.store";
+import { clearLegacyStoredLogin, COOKIE_SESSION_MARKER, enterCentralSso, useAuthStore } from "@/store/auth.store";
 import App from "./App";
 import "./index.css";
 
@@ -30,7 +30,14 @@ const queryClient = new QueryClient({
 // Decide the door BEFORE the first render (one build works both ways; see lib/authMode):
 // inside DeoDap Central -> signed in by the gateway; opened directly -> MCP's normal login.
 void detectAuthMode().then((detection) => {
-  if (detection.mode === "central-sso") enterCentralSso(detection.user);
+  if (detection.mode === "central-sso") {
+    enterCentralSso(detection.user);
+  } else {
+    // Standalone: never trust a token from browser storage; a valid httpOnly session cookie
+    // (GET /api/me answered 200) restores the user.
+    clearLegacyStoredLogin();
+    if (detection.user) useAuthStore.getState().setAuth(COOKIE_SESSION_MARKER, detection.user);
+  }
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>

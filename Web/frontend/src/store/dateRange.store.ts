@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 /** Selected date-range preset. */
 export type DatePreset = "today" | "7d" | "30d" | "mtd" | "ytd" | "custom";
@@ -101,7 +102,7 @@ export const useDateRangeStore = create<DateRangeState>()(
       setCustomRange: (from, to) => set({ preset: "custom", customFrom: from, customTo: to }),
     }),
     {
-      name: "deodap-daterange",
+      name: STORAGE_KEYS.dateRange,
       storage: createJSONStorage(() => guardedStorage),
       partialize: (s) => ({ preset: s.preset, customFrom: s.customFrom, customTo: s.customTo }),
       // Validate persisted value; on missing/invalid/corrupt data fall back to the

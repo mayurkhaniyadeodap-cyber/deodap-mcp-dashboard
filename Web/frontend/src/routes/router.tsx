@@ -1,4 +1,5 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
+import { BASE_PATH } from "@/lib/basePath";
 import { AppLayout } from "@/layouts/AppLayout";
 import { AuthLayout } from "@/layouts/AuthLayout";
 import AdminDebugPage from "@/pages/AdminDebugPage";
@@ -81,4 +82,4 @@ export const router = createBrowserRouter([
     ],
   },
   { path: "*", element: <NotFound /> },
-]);
+], { basename: BASE_PATH || "/" }); // "/courier-billing" on care.deodap.info

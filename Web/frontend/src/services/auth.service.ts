@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
-import { useAuthStore } from "@/store/auth.store";
+import { COOKIE_SESSION_MARKER, useAuthStore } from "@/store/auth.store";
 import type { LoginResponse, User } from "@/types/app";
 
 export interface LoginPayload {
@@ -8,7 +8,7 @@ export interface LoginPayload {
   password: string;
 }
 
-/** POST /api/login — on success, persist token+user to the auth store. */
+/** POST /api/login — the server sets the httpOnly session cookie; the store keeps only the user. */
 export function useLogin() {
   const setAuth = useAuthStore((s) => s.setAuth);
   return useMutation({
@@ -17,7 +17,7 @@ export function useLogin() {
       return data;
     },
     onSuccess: (data) => {
-      setAuth(data.access_token, data.user);
+      setAuth(COOKIE_SESSION_MARKER, data.user); // data.access_token is deliberately not kept
     },
   });
 }

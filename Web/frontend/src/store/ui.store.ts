@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 interface UIState {
   /** Desktop: icon-only (collapsed) vs expanded sidebar. Persisted. */
@@ -23,7 +24,7 @@ export const useUIStore = create<UIState>()(
       setMobileSidebarOpen: (v) => set({ mobileSidebarOpen: v }),
     }),
     {
-      name: "deodap-ui",
+      name: STORAGE_KEYS.ui,
       // Persist ONLY sidebar collapsed state (date range lives in its own store).
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }),
     },

@@ -17,7 +17,7 @@ import { detectAuthMode, isCentralSso, setAuthModeForTests, SSO_SESSION_MARKER }
 import { LoginRoute } from "@/routes/LoginRoute";
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
 import { api } from "@/services/api";
-import { enterCentralSso, useAuthStore } from "@/store/auth.store";
+import { COOKIE_SESSION_MARKER, enterCentralSso, useAuthStore } from "@/store/auth.store";
 import type { User } from "@/types/app";
 
 const USER = { id: 7, name: "Logistic Admin", email: "logistic@deodap.com", role: "admin" } as User;
@@ -119,19 +119,25 @@ describe("direct access (standalone door)", () => {
     expect(screen.queryByText(/DeoDap Central session has ended/)).toBeNull();
   });
 
-  it("a stored standalone login still opens the app, and its token is sent", async () => {
+  it("a cookie session opens the app; no browser-held token is sent (the httpOnly cookie is)", async () => {
     await detectAuthMode(fakeFetch(401));
-    useAuthStore.setState({ token: "standalone-token", user: USER });
+    useAuthStore.setState({ token: COOKIE_SESSION_MARKER, user: USER });
     renderApp("/");
     expect(await screen.findByText("MCP dashboard content")).toBeTruthy();
 
-    let sent: unknown;
+    let sent: { auth?: unknown; csrf?: unknown } = {};
     vi.spyOn(api.defaults, "adapter", "get").mockReturnValue(async (config: InternalAxiosRequestConfig) => {
-      sent = config.headers.Authorization;
+      sent = { auth: config.headers.Authorization, csrf: config.headers["X-Requested-With"] };
       return { data: {}, status: 200, statusText: "OK", headers: {}, config } as AxiosResponse;
     });
     await api.get("/dashboard");
-    expect(sent).toBe("Bearer standalone-token");
+    expect(sent.auth).toBeUndefined();
+    expect(sent.csrf).toBe("XMLHttpRequest");
+  });
+
+  it("standalone + valid session cookie: detection returns the signed-in user", async () => {
+    const detection = await detectAuthMode(fakeFetch(200, {}, USER));
+    expect(detection).toEqual({ mode: "standalone", status: 200, user: USER });
   });
 
   it("keeps Logout and the normal password form", () => {

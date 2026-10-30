@@ -1,5 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { isCentralSso } from "@/lib/authMode";
+import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
 
 /**
@@ -14,6 +16,8 @@ export function useAuth() {
   const queryClient = useQueryClient();
 
   const logout = useCallback(() => {
+    // End the cookie session server-side (best effort; the store is cleared regardless).
+    if (!isCentralSso()) void api.post("/logout").catch(() => undefined);
     clear();
     queryClient.clear();
   }, [clear, queryClient]);

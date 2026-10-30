@@ -1,18 +1,17 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import { isCentralSso, SSO_SESSION_MARKER } from "@/lib/authMode";
+import { SSO_SESSION_MARKER } from "@/lib/authMode";
 import type { Role, User } from "@/types/app";
 
+/** Stand-in for "signed in" with the httpOnly session cookie. NOT a credential. */
+export const COOKIE_SESSION_MARKER = "cookie-session";
+
 /**
- * Auth store — holds the access token and current user.
- *
- * Phase 1: token kept in memory (Zustand) with a localStorage fallback (via the
- * persist middleware) so a refresh keeps the session.
- * // Phase 2: switch to an httpOnly cookie and drop token persistence here.
- *
- * Inside DeoDap Central (see lib/authMode) nothing is persisted: the user is re-read from /api/me
- * on every load, so a different Central user in the same browser never sees a previous user's
- * identity, and the browser never holds an MCP token.
+ * Auth store — who is signed in. Memory only, nothing is written to browser storage:
+ *   - standalone login: the credential is an httpOnly cookie scoped to this app's API path
+ *     (set by POST /api/login). Page scripts can't read it — important on care.deodap.info,
+ *     where other apps share the browser origin — and on reload the user is restored from
+ *     GET /api/me (main.tsx). `token` holds COOKIE_SESSION_MARKER;
+ *   - inside DeoDap Central: the gateway signs each request in; `token` holds SSO_SESSION_MARKER.
  */
 interface AuthState {
   token: string | null;
@@ -24,38 +23,35 @@ interface AuthState {
   hasRole: (...roles: Role[]) => boolean;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      token: null,
-      user: null,
-      setAuth: (token, user) => set({ token, user }),
-      setUser: (user) => set({ user }),
-      clear: () => set({ token: null, user: null }),
-      isAuthenticated: () => Boolean(get().token),
-      hasRole: (...roles) => {
-        const role = get().user?.role;
-        return role ? roles.includes(role) : false;
-      },
-    }),
-    {
-      name: "deodap-auth", // localStorage key (standalone login only)
-      partialize: (state) => (isCentralSso() ? {} : { token: state.token, user: state.user }),
-    },
-  ),
-);
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  token: null,
+  user: null,
+  setAuth: (token, user) => set({ token, user }),
+  setUser: (user) => set({ user }),
+  clear: () => set({ token: null, user: null }),
+  isAuthenticated: () => Boolean(get().token),
+  hasRole: (...roles) => {
+    const role = get().user?.role;
+    return role ? roles.includes(role) : false;
+  },
+}));
 
-/**
- * Switch the store to the DeoDap Central door: drop any login stored by a former standalone
- * session in this origin, and hold only the user the gateway signed in (no token).
- */
-export function enterCentralSso(user: User | null): void {
+/** Remove logins stored in browser storage by earlier builds (they held a readable token). */
+export function clearLegacyStoredLogin(): void {
   try {
     window.localStorage.removeItem("deodap-auth");
     window.localStorage.removeItem("deodap-auth-central-sso"); // key used by the former build-time mode
   } catch {
     /* storage unavailable: nothing to clean */
   }
+}
+
+/**
+ * Switch the store to the DeoDap Central door: drop any login stored by a former standalone
+ * session in this origin, and hold only the user the gateway signed in (no token).
+ */
+export function enterCentralSso(user: User | null): void {
+  clearLegacyStoredLogin();
   if (user) {
     useAuthStore.getState().setAuth(SSO_SESSION_MARKER, user);
   } else {

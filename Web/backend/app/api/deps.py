@@ -4,11 +4,12 @@ and an optional from/to date-range query."""
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth import central_sso
 from app.auth.roles import Role
+from app.core.config import settings
 from app.core.security import JWTError, decode_access_token
 from app.schemas.auth import UserPublic
 from app.services import auth_service
@@ -49,11 +50,24 @@ def get_db() -> Iterator[None]:
     yield None
 
 
+# Methods that change data. With cookie auth the browser attaches the cookie by itself, so these
+# must also carry a header a cross-site form can't send (the app's API client sets it).
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_CSRF_HEADER = "x-requested-with"
+
+
 def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> UserPublic:
     if creds is None or not creds.credentials:
-        raise _UNAUTHORIZED
+        # Standalone web login: the httpOnly session cookie (see routers/auth.py).
+        token = request.cookies.get(settings.auth_cookie_name)
+        if not token:
+            raise _UNAUTHORIZED
+        if request.method in _UNSAFE_METHODS and not request.headers.get(_CSRF_HEADER):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing request header")
+        return _user_from_app_token(token)
     # DeoDap Central single sign-on: an Ed25519 assertion verified with Central's PUBLIC key
     # (only when CENTRAL_SSO_PUBLIC_KEY_FILE is configured). Everything else is the app's own
     # HS256 login token, handled exactly as before.
@@ -62,8 +76,13 @@ def get_current_user(
         if user is None:
             raise _UNAUTHORIZED
         return user
+    return _user_from_app_token(creds.credentials)
+
+
+def _user_from_app_token(token: str) -> UserPublic:
+    """The user behind the app's own HS256 login token (header or cookie)."""
     try:
-        payload = decode_access_token(creds.credentials)
+        payload = decode_access_token(token)
     except JWTError as exc:
         raise _UNAUTHORIZED from exc
 

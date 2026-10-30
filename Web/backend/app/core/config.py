@@ -82,6 +82,19 @@ class Settings(BaseSettings):
     # Comma-separated in the env; parsed into a list below.
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # --- Public URL sub-paths ---
+    # Sub-paths the app may be served under behind the reverse proxy, which sends the one in
+    # use as `X-Forwarded-Prefix` (e.g. https://care.deodap.info/courier-billing/). Only these
+    # exact values are honoured: the prefix is written into the served page, so it is never
+    # taken from an arbitrary header value. Requests without the header are served at "/".
+    public_base_paths: str = "/courier-billing"
+
+    # --- Session cookie (standalone login) ---
+    # The login token lives in an httpOnly cookie scoped to the API path ("<prefix>/api"), so
+    # page scripts — including other apps sharing the domain — can't read it, and requests to
+    # other paths of the domain never carry it.
+    auth_cookie_name: str = "mcp_session"
+
     # --- MCP (Phase 2 live integration) ---
     # The Ship MCP server authenticates via a URL query param (?mcp_token=...),
     # NOT a Bearer header. Blank token => services fall back to mock data.
@@ -165,6 +178,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def public_base_paths_list(self) -> list[str]:
+        return [p.strip().rstrip("/") for p in self.public_base_paths.split(",") if p.strip().rstrip("/")]
 
     @property
     def mcp_connect_url(self) -> str:

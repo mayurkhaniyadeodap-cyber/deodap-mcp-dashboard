@@ -8,12 +8,13 @@ is the single source of truth for the generated frontend types.
 
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routers import (
@@ -30,6 +31,7 @@ from app.api.routers import (
     users,
 )
 from app.auth import central_sso
+from app.core.base_path import public_prefix
 from app.core.config import DEV_JWT_SECRET, settings, validate_required_env
 from app.middleware.error_handler import register_error_handlers
 from app.middleware.hardening import RateLimitMiddleware, SecurityHeadersMiddleware
@@ -216,20 +218,40 @@ if settings.enable_mcp_debug:
 # routes are registered above, so only non-/api paths fall through to here. SPA
 # fallback: unknown paths return index.html so client-side routing works.
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "static"
+# Served under a public sub-path (X-Forwarded-Prefix, allow-listed): the page's root-relative
+# src/href ("/assets/...", "/theme-init.js") get the prefix, and a meta tag tells the frontend
+# its base path (router basename, API base). Without the header the file is served unchanged.
+_index_cache: dict[str, str] = {}
+_ROOT_REF = re.compile(r'(\s(?:src|href))="/(?!/)')
+
+
+def _index_response(request: Request) -> HTMLResponse:
+    prefix = public_prefix(request.headers)
+    html = _index_cache.get(prefix)
+    if html is None:
+        html = (_FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+        if prefix:
+            html = _ROOT_REF.sub(lambda m: f'{m.group(1)}="{prefix}/', html)
+            meta = f'\n    <meta name="app-base-path" content="{prefix}" />'
+            html = html.replace("<head>", "<head>" + meta, 1)
+        _index_cache[prefix] = html
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
 if (_FRONTEND_DIR / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=_FRONTEND_DIR / "assets"), name="assets")
 
     @app.get("/", include_in_schema=False)
-    def _index() -> FileResponse:
-        return FileResponse(_FRONTEND_DIR / "index.html")
+    def _index(request: Request) -> HTMLResponse:
+        return _index_response(request)
 
     @app.get("/{full_path:path}", include_in_schema=False)
-    def _spa_fallback(full_path: str):
+    def _spa_fallback(full_path: str, request: Request):
         # Unknown API paths must 404 as API, not silently return the SPA shell.
         if full_path.startswith("api/"):
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Not found")
         candidate = (_FRONTEND_DIR / full_path).resolve()
-        if candidate.is_file() and _FRONTEND_DIR.resolve() in candidate.parents:
+        if candidate.is_file() and _FRONTEND_DIR.resolve() in candidate.parents and candidate.name != "index.html":
             return FileResponse(candidate)
-        return FileResponse(_FRONTEND_DIR / "index.html")
+        return _index_response(request)

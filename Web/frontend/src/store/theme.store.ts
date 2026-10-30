@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 export type Theme = "dark" | "light";
 
@@ -18,7 +19,7 @@ export const useThemeStore = create<ThemeState>()(
       setTheme: (t) => set({ theme: t }),
       toggle: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
     }),
-    { name: "deodap-theme" },
+    { name: STORAGE_KEYS.theme },
   ),
 );
 

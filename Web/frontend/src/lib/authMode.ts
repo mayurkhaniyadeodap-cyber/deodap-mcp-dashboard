@@ -1,4 +1,5 @@
 import type { User } from "@/types/app";
+import { API_BASE } from "@/lib/basePath";
 
 /**
  * Which "door" this page was opened through, detected at runtime (one build serves both):
@@ -38,7 +39,6 @@ export function setAuthModeForTests(next: AuthMode): void {
   mode = next;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 /**
  * Ask GET /api/me WITHOUT any stored token. Only the gateway can make this succeed (it signs the
@@ -54,7 +54,9 @@ export async function detectAuthMode(fetchFn: typeof fetch = fetch): Promise<Aut
     });
     if (!response.headers.has(GATEWAY_HEADER)) {
       mode = "standalone";
-      return { mode, status: response.status, user: null };
+      // 200 here = the httpOnly session cookie from an earlier login is still valid.
+      const user = response.ok ? ((await response.json()) as User) : null;
+      return { mode, status: response.status, user };
     }
     mode = "central-sso";
     const user = response.ok ? ((await response.json()) as User) : null;
