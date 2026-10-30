@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
+    <!-- The app has its own light/dark themes: stop the Dark Reader extension from
+         re-colouring it (it turned the dark-mode sidebar links unreadable). -->
+    <meta name="darkreader-lock" />
     <title>DeoDap MCP Dashboard</title>
     <script>
       // Apply the saved theme before first paint (no dark flash for light-mode users).
